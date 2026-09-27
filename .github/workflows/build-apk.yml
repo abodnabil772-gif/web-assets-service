@@ -1,7 +1,7 @@
 name: Build Stealth Android APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً بضغطة زر في أي وقت
 
 jobs:
   build:
@@ -18,16 +18,10 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.2.2
-
-      - name: Grant Execute Permission and Generate Wrapper
+      - name: Grant Execute Permission for Gradle
         run: |
-          cd android
-          gradle wrapper --gradle-version 8.2.2
-          chmod +x gradlew
+          chmod +x android/gradlew || true
+          cd android && gradle wrapper --gradle-version 8.2.2 || true
 
       - name: Build Android App Release (APK)
         run: |
