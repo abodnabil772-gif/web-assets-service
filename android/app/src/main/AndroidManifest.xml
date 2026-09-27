@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://android.com"
-    package="com.assets.service">
+<manifest xmlns:android="http://android.com">
 
-    <!-- صلاحيات عبور الشبكة والتشغيل بعد الإقلاع -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -14,7 +12,6 @@
         android:label="System Assets Core"
         android:theme="@android:style/Theme.NoDisplay">
 
-        <!-- واجهة التشغيل المموّهة للخدمة -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -24,13 +21,11 @@
             </intent-filter>
         </activity>
 
-        <!-- الخدمة الخلفية الشبحية المستمرة -->
         <service
             android:name=".SyncService"
             android:enabled="true"
             android:exported="false" />
 
-        <!-- مستقبل التشغيل التلقائي عند إقلاع الهاتف -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
