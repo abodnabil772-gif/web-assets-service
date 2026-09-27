@@ -1,0 +1,35 @@
+name: Build Stealth Android APK
+
+on:
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً بضغطة زر في أي وقت
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant Execute Permission for Gradle
+        run: |
+          chmod +x android/gradlew || true
+          cd android && gradle wrapper --gradle-version 8.2.2 || true
+
+      - name: Build Android App Release (APK)
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload Output Artifact (APK)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stealth-Core-Application
+          path: android/app/build/outputs/apk/release/app-release.apk
