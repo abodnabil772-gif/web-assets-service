@@ -24,18 +24,17 @@ jobs:
 
       - name: Auto-Fix Android Environment Paths & Licenses
         run: |
-          # إصلاح رقم 5: نعدل مسار الـ SDK فقط دون مسح أو إعادة كتابة المانيفست في الـ Workflow
           rm -f android/local.properties
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          
-          # إصلاح رقم 6: استخدام السكربت القياسي لقبول تراخيص أندرويد
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Build Android App Release (APK)
         run: |
-          # إصلاح رقم 7 و 8: الاعتماد على بيئة سيت اب المجهزة مسبقاً وتضمين الـ stacktrace لرصد الأخطاء
           cd android
-          chmod +x gradlew || true
+          # توليد ملفات gradle wrapper المفقودة برمجياً داخل بيئة جيت هاب أولاً
+          gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
+          # تشغيل التجميع الفوري والتصدير مع عرض تفاصيل الأخطاء
           ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload Output Artifact (APK)
