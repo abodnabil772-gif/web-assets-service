@@ -31,14 +31,12 @@ jobs:
       - name: Build Android App Release (APK)
         run: |
           cd android
-          # توليد ملفات gradle wrapper المفقودة برمجياً داخل بيئة جيت هاب أولاً
           gradle wrapper --gradle-version 8.5
           chmod +x gradlew
-          # تشغيل التجميع الفوري والتصدير مع عرض تفاصيل الأخطاء
           ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload Output Artifact (APK)
         uses: actions/upload-artifact@v4
         with:
           name: Stealth-Core-Application
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/app/build/outputs/apk/release/*.apk
