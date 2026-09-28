@@ -8,7 +8,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- تم استخدام الثيم الافتراضي للنظام هنا ليتخطى حظر الأيقونة ويفتح التطبيق فوراً عند الضغط -->
     <application
         android:allowBackup="false"
         android:icon="@android:drawable/sym_def_app_icon"
