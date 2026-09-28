@@ -28,15 +28,16 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Build Android App Release (APK)
+      - name: Build Android App Debug (Auto-Signed APK)
         run: |
           cd android
           gradle wrapper --gradle-version 8.5
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          # تجميع نسخة تصحيح الأخطاء الموقعة تلقائياً لتقبلها الهواتف فوراً
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload Output Artifact (APK)
         uses: actions/upload-artifact@v4
         with:
           name: Stealth-Core-Application
-          path: android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
