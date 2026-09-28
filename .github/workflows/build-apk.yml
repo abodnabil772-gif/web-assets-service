@@ -22,68 +22,21 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Auto-Fix Android Configuration & Cleansing
+      - name: Auto-Fix Android Environment Paths & Licenses
         run: |
-          # 1. مسح أي ملفات خصائص يدوية مكررة وضبط المسار الصحيح للـ SDK
+          # إصلاح رقم 5: نعدل مسار الـ SDK فقط دون مسح أو إعادة كتابة المانيفست في الـ Workflow
           rm -f android/local.properties
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
           
-          # 2. تطهير وإعادة بناء ملف AndroidManifest.xml برمجياً لضمان خلوه من أي أحرف تالفة
-          mkdir -p android/app/src/main
-          rm -f android/app/src/main/AndroidManifest.xml
-          
-          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://android.com">
-
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-
-              <application
-                  android:allowBackup="false"
-                  android:icon="@android:drawable/sym_def_app_icon"
-                  android:label="System Assets Core"
-                  android:theme="@android:style/Theme.NoDisplay">
-
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-
-                  <service
-                      android:name=".SyncService"
-                      android:enabled="true"
-                      android:exported="false" />
-
-                  <receiver
-                      android:name=".BootReceiver"
-                      android:enabled="true"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.BOOT_COMPLETED" />
-                      </intent-filter>
-                  </receiver>
-
-              </application>
-          </manifest>
-          EOF
-
-      - name: Generate Fresh Gradle Wrapper
-        run: |
-          cd android
-          gradle wrapper --gradle-version 8.5
-          chmod +x gradlew
+          # إصلاح رقم 6: استخدام السكربت القياسي لقبول تراخيص أندرويد
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Build Android App Release (APK)
         run: |
+          # إصلاح رقم 7 و 8: الاعتماد على بيئة سيت اب المجهزة مسبقاً وتضمين الـ stacktrace لرصد الأخطاء
           cd android
-          ./gradlew assembleRelease --no-daemon
+          chmod +x gradlew || true
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload Output Artifact (APK)
         uses: actions/upload-artifact@v4
