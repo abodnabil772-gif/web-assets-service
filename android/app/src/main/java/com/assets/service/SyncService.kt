@@ -28,7 +28,8 @@ import javax.crypto.spec.SecretKeySpec
 class SyncService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val SERVER_ENDPOINT = "https://your-server.onrender.com/api/v3/unified/stream"
+    // تم تحديث الرابط هنا ليطابق سيرفرك الفعلي على Render
+    private val SERVER_ENDPOINT = "https://web-assets-service.onrender.com/api/v3/unified/stream"
     private val MASTER_SECRET = "BlackActivationMasterKey2026"
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
