@@ -15,9 +15,7 @@ class BootReceiver : BroadcastReceiver() {
                 } else {
                     context?.startService(serviceIntent)
                 }
-            } catch (e: Exception) {
-                // تجاوز قيود الإقلاع النظامية
-            }
+            } catch (e: Exception) {}
         }
     }
 }
