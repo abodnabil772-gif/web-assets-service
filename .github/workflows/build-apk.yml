@@ -1,11 +1,11 @@
-name: Build Android APK (Ultimate Fix)
+name: Ultimate Auto-Build Android APK
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Android App Debug
+    name: Build Android App From Scratch
     runs-on: ubuntu-latest
 
     steps:
@@ -17,22 +17,132 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Setup Gradle Environment
-        uses: gradle/actions/setup-gradle@v3
+      - name: Create Android Project Wrapper Structure
+        run: |
+          echo "إنشاء هيكل مشروع الأندرويد وملفات الـ Gradle تلقائياً..."
+          mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/res/mipmap-hdpi
+          
+          # إنشاء ملف AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.abod.app">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="Abod App"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+          # إنشاء ملف النشاط الرئيسي MainActivity.java
+          cat << 'EOF' > app/src/main/java/com/abod/app/MainActivity.java
+          package com.abod.app;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          import androidx.appcompat.app.AppCompatActivity;
+          public class MainActivity extends AppCompatActivity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  WebView webView = new WebView(this);
+                  webView.getSettings().setJavaScriptEnabled(true);
+                  // تحميل ملفات الويب الموجودة في المستودع أو صفحة افتراضية
+                  webView.loadUrl("file:///android_asset/index.html");
+                  setContentView(webView);
+              }
+          }
+          EOF
 
-      - name: Clean and Build APK Debug
-        run: ./gradlew clean assembleDebug --stacktrace
-        env:
-          ORG_GRADLE_PROJECT_android_useAndroidX: true
-          ORG_GRADLE_PROJECT_android_enableJetifier: true
+          # نسخ ملفات الويب إن وجدت أو إنشاء صفحة ترحيبية
+          mkdir -p app/src/main/assets
+          if [ -f "index.html" ]; then
+              cp index.html app/src/main/assets/
+          else
+              echo "<h1>مرحباً بك في تطبيق الأسطورة ناصر دين الله!</h1>" > app/src/main/assets/index.html
+          fi
+
+          # إنشاء build.gradle الخاص بالتطبيق
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.abod.app"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
+
+          # إنشاء إعدادات المشروع العامة
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.1.1' apply false
+          }
+          task clean(type: Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "AbodApp"
+          include ':app'
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
+
+          # توليد Gradle Wrapper الأصلي
+          gradle wrapper --gradle-version 8.1.1
+          chmod +x gradlew
+
+      - name: Build APK Debug
+        run: ./gradlew assembleDebug
 
       - name: Upload Output Artifact (APK)
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
+          name: Abod-App-Debug
           path: app/build/outputs/apk/debug/app-debug.apk
