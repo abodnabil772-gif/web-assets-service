@@ -25,7 +25,7 @@ jobs:
 
       - name: Create Android Project Structure
         run: |
-          echo "إنشاء هيكل المشروع وملفات الأندرويد..."
+          echo "إنشاء هيكل المشروع وملفات الأندرويد مع الـ Namespace..."
           mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
           # إنشاء AndroidManifest.xml
@@ -74,13 +74,14 @@ jobs:
               echo "<h1>تطبيق الأسطورة ناصر دين الله</h1>" > app/src/main/assets/index.html
           fi
 
-          # إنشاء app/build.gradle
+          # إنشاء app/build.gradle مع الـ namespace الإجباري
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
           }
           android {
               compileSdk 34
+              namespace 'com.abod.app'
               defaultConfig {
                   applicationId "com.abod.app"
                   minSdk 21
