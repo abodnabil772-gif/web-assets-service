@@ -1,10 +1,11 @@
-name: Build Stealth Android APK
+name: Build Android APK (Ultimate Fix)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build Android App Debug
     runs-on: ubuntu-latest
 
     steps:
@@ -14,30 +15,24 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: '17'
+          cache: 'gradle'
 
       - name: Setup Gradle Environment
         uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.5'
 
-      - name: Auto-Fix Android Environment Paths & Licenses
-        run: |
-          rm -f android/local.properties
-          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-      - name: Build Android App Debug (Auto-Signed APK)
-        run: |
-          cd android
-          gradle wrapper --gradle-version 8.5
-          chmod +x gradlew
-          # تجميع نسخة تصحيح الأخطاء الموقعة تلقائياً لتقبلها الهواتف فوراً
-          ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Clean and Build APK Debug
+        run: ./gradlew clean assembleDebug --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_android_useAndroidX: true
+          ORG_GRADLE_PROJECT_android_enableJetifier: true
 
       - name: Upload Output Artifact (APK)
         uses: actions/upload-artifact@v4
         with:
-          name: Stealth-Core-Application
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
