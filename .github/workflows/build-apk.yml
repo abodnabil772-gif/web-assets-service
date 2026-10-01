@@ -18,22 +18,22 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Create Android Project Wrapper Structure
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Create Android Project Structure
         run: |
-          echo "إنشاء هيكل مشروع الأندرويد وملفات الـ Gradle تلقائياً..."
-          mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/res/mipmap-hdpi
+          echo "إنشاء هيكل المشروع وملفات الأندرويد..."
+          mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
-          # إنشاء ملف AndroidManifest.xml
+          # إنشاء AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.abod.app">
               <uses-permission android:name="android.permission.INTERNET" />
               <application
                   android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
                   android:label="Abod App"
-                  android:roundIcon="@mipmap/ic_launcher_round"
-                  android:supportsRtl="true"
                   android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                   <activity
                       android:name=".MainActivity"
@@ -47,7 +47,7 @@ jobs:
           </manifest>
           EOF
 
-          # إنشاء ملف النشاط الرئيسي MainActivity.java
+          # إنشاء MainActivity.java لتحميل صفحات الويب
           cat << 'EOF' > app/src/main/java/com/abod/app/MainActivity.java
           package com.abod.app;
           import android.os.Bundle;
@@ -59,22 +59,20 @@ jobs:
                   super.onCreate(savedInstanceState);
                   WebView webView = new WebView(this);
                   webView.getSettings().setJavaScriptEnabled(true);
-                  // تحميل ملفات الويب الموجودة في المستودع أو صفحة افتراضية
                   webView.loadUrl("file:///android_asset/index.html");
                   setContentView(webView);
               }
           }
           EOF
 
-          # نسخ ملفات الويب إن وجدت أو إنشاء صفحة ترحيبية
-          mkdir -p app/src/main/assets
+          # نسخ ملف index.html أو إنشاء صفحة ترحيبية افتراضية
           if [ -f "index.html" ]; then
               cp index.html app/src/main/assets/
           else
-              echo "<h1>مرحباً بك في تطبيق الأسطورة ناصر دين الله!</h1>" > app/src/main/assets/index.html
+              echo "<h1>تطبيق الأسطورة ناصر دين الله</h1>" > app/src/main/assets/index.html
           fi
 
-          # إنشاء build.gradle الخاص بالتطبيق
+          # إنشاء app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -99,16 +97,14 @@ jobs:
           }
           EOF
 
-          # إنشاء إعدادات المشروع العامة
+          # إنشاء build.gradle الرئيسي
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.1.1' apply false
           }
-          task clean(type: Delete) {
-              delete rootProject.buildDir
-          }
           EOF
 
+          # إنشاء settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -128,18 +124,15 @@ jobs:
           include ':app'
           EOF
 
+          # إنشاء gradle.properties
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-          # توليد Gradle Wrapper الأصلي
-          gradle wrapper --gradle-version 8.1.1
-          chmod +x gradlew
-
       - name: Build APK Debug
-        run: ./gradlew assembleDebug
+        run: gradle app:assembleDebug
 
       - name: Upload Output Artifact (APK)
         uses: actions/upload-artifact@v4
