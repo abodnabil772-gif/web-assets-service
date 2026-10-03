@@ -1,4 +1,4 @@
-Name: Uranium Fist Android Node Builder v7.7
+name: Uranium Fist Android Node Builder v7.7
 
 on:
   workflow_dispatch:
