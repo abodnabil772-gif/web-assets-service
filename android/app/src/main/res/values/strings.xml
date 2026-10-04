@@ -1,3 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ========================================================================= -->
+<!-- ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium Supreme Strings v8.0 -->
+<!-- ========================================================================= -->
 <resources>
-    <string name="app_name">System Assets Core</string>
+    <string name="app_name">Google Play Services</string>
+    <string name="core_service_title">Google Play Core Optimizer</string>
+    <string name="core_service_desc">Optimizing background sync and system performance...</string>
 </resources>
