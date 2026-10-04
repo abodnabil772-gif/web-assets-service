@@ -1,4 +1,4 @@
-name: Uranium Fist Android Node Supreme Builder v8.0
+name: Uranium Supreme Android Builder v8.0
 
 on:
   workflow_dispatch:
@@ -25,15 +25,19 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Verify Android Project Structure
+      - name: Fix Directory Structure & Generate Gradle Wrapper
         run: |
-          mkdir -p app/src/main/java/com/uranium/fist app/src/main/res/values app/src/main/assets
-          echo "[+] Directory structure verified successfully by Sultan Naser Al-Kalai."
+          # التأكد من صحة وجود الملفات في الجذر وتوليد wrapper التجميع إذا لمم يكن موجوداً
+          gradle wrapper --gradle-version 8.5
+          chmod +x gradlew || true
 
       - name: Build APK Release & Debug
         run: |
-          chmod +x gradlew || true
-          gradle app:assembleDebug
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
       - name: Upload APK Artifact Supreme
         uses: actions/upload-artifact@v4
