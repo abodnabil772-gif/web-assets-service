@@ -1,14 +1,27 @@
 {
-  "name": "stealth-c2-core",
-  "version": "1.0.0",
+  "name": "uranium-supreme-c2-core",
+  "version": "8.0.0",
+  "description": "Uranium Supreme C2 Architecture - Absolute Digital Sovereignty Edition",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "dev": "nodemon app.js"
   },
+  "keywords": [
+    "c2",
+    "stealth",
+    "uranium",
+    "supreme-core"
+  ],
+  "author": "السلطان ناصر دين الله الكلعي",
+  "license": "MIT",
   "dependencies": {
     "express": "^4.19.2",
     "node-telegram-bot-api": "^0.66.0",
     "dotenv": "^16.4.5",
     "sqlite3": "^5.1.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
