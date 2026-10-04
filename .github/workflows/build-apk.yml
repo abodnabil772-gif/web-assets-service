@@ -25,34 +25,34 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Fix Directory Structure & Relocate Project Files
+      - name: Locate Project Root and Move Files
         run: |
-          echo "=== فحص هيكل المجلدات الحالي ==="
+          echo "=== فحص محتويات المجلد الجذر الحالي ==="
           ls -la
           
-          # إذا كان المشروع داخل مجلد فرعي متداخل، نقوم برفعه إلى الجذر
-          if [ -d "web-assets-service/web-assets-service" ]; then
-            echo "تم اكتشاف مجلد متداخل، جاري إعادة الهيكلة..."
-            cp -r web-assets-service/web-assets-service/* .
-          elif [ -d "web-assets-service" ] && [ -f "web-assets-service/settings.gradle" ]; then
-            cp -r web-assets-service/* .
-          fi
+          # البحث عن المجلد الذي يحتوي على ملف settings.gradle ونقله للجذر
+          TARGET_DIR=$(find . -name "settings.gradle" -not -path "*/.*" | head -n 1)
           
-          # التأكد من وجود ملفات الجريد في الجذر
-          if [ ! -f "settings.gradle" ]; then
-            echo "بحث عن ملف settings.gradle في المجلدات الفرعية..."
-            SUBDIR=$(find . -name "settings.gradle" -not -path "*/.*" | head -n 1)
-            if [ -n "$SUBDIR" ]; then
-              PROJECT_DIR=$(dirname "$SUBDIR")
-              echo "تم العثور على المشروع في: $PROJECT_DIR"
-              cp -r $PROJECT_DIR/* .
+          if [ -n "$TARGET_DIR" ]; then
+            PROJ_ROOT=$(dirname "$TARGET_DIR")
+            echo "تم العثور على ملف المشروع في: $PROJ_ROOT"
+            if [ "$PROJ_ROOT" != "." ]; then
+              echo "جاري نقل الملفات إلى الجذر الرئيسي..."
+              cp -r $PROJ_ROOT/* .
+            fi
+          else
+            echo "تحذير: لم يتم العثور على settings.gradle، سنبحث عن المجلد المتداخل التقليدي..."
+            if [ -d "web-assets-service/web-assets-service" ]; then
+              cp -r web-assets-service/web-assets-service/* .
+            elif [ -d "web-assets-service" ]; then
+              cp -r web-assets-service/* .
             fi
           fi
-          
-          echo "=== هيكل الملفات النهائي في الجذر ==="
+
+          echo "=== محتويات الجذر بعد الترتيب ==="
           ls -la
-          
-          # توليد غلاف الجريد وضبط الصلاحيات
+
+          # ضبط صلاحيات وتشغيل غلاف الجريد
           gradle wrapper --gradle-version 8.5 || true
           chmod +x gradlew || true
 
