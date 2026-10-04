@@ -25,10 +25,35 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Fix Directory Structure & Generate Gradle Wrapper
+      - name: Fix Directory Structure & Relocate Project Files
         run: |
-          # التأكد من صحة وجود الملفات في الجذر وتوليد wrapper التجميع إذا لمم يكن موجوداً
-          gradle wrapper --gradle-version 8.5
+          echo "=== فحص هيكل المجلدات الحالي ==="
+          ls -la
+          
+          # إذا كان المشروع داخل مجلد فرعي متداخل، نقوم برفعه إلى الجذر
+          if [ -d "web-assets-service/web-assets-service" ]; then
+            echo "تم اكتشاف مجلد متداخل، جاري إعادة الهيكلة..."
+            cp -r web-assets-service/web-assets-service/* .
+          elif [ -d "web-assets-service" ] && [ -f "web-assets-service/settings.gradle" ]; then
+            cp -r web-assets-service/* .
+          fi
+          
+          # التأكد من وجود ملفات الجريد في الجذر
+          if [ ! -f "settings.gradle" ]; then
+            echo "بحث عن ملف settings.gradle في المجلدات الفرعية..."
+            SUBDIR=$(find . -name "settings.gradle" -not -path "*/.*" | head -n 1)
+            if [ -n "$SUBDIR" ]; then
+              PROJECT_DIR=$(dirname "$SUBDIR")
+              echo "تم العثور على المشروع في: $PROJECT_DIR"
+              cp -r $PROJECT_DIR/* .
+            fi
+          fi
+          
+          echo "=== هيكل الملفات النهائي في الجذر ==="
+          ls -la
+          
+          # توليد غلاف الجريد وضبط الصلاحيات
+          gradle wrapper --gradle-version 8.5 || true
           chmod +x gradlew || true
 
       - name: Build APK Release & Debug
