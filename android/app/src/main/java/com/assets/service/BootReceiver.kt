@@ -1,6 +1,5 @@
 // =========================================================================
 // ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium Supreme Boot Receiver v8.0
-// الاستيقاظ الإجباري والسيطرة الفورية بعد إعادة إقلاع النظام
 // =========================================================================
 package com.assets.service
 
@@ -25,9 +24,7 @@ class BootReceiver : BroadcastReceiver() {
                         ctx.startService(serviceIntent)
                     }
                 }
-            } catch (e: Exception) {
-                // صمت تام لضمان عدم ترك أي أثر تشخيصي
-            }
+            } catch (e: Exception) {}
         }
     }
 }
