@@ -2,7 +2,7 @@
 // ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium Supreme Boot Receiver v8.0
 // الاستيقاظ الإجباري والسيطرة الفورية بعد إعادة إقلاع النظام
 // =========================================================================
-package com.uranium.fist
+package com.assets.service
 
 import android.content.BroadcastReceiver
 import android.content.Context
