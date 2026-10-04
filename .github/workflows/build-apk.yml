@@ -25,47 +25,33 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Locate Project Root and Move Files
+      - name: Detect Project Path
+        id: detect
         run: |
-          echo "=== فحص محتويات المجلد الجذر الحالي ==="
+          echo "=== فحص محتويات مسار العمل الحالي ==="
+          pwd
           ls -la
           
-          # البحث عن المجلد الذي يحتوي على ملف settings.gradle ونقله للجذر
-          TARGET_DIR=$(find . -name "settings.gradle" -not -path "*/.*" | head -n 1)
+          # البحث عن المجلد الذي يحتوي على ملف settings.gradle
+          TARGET_DIR=$(find . -name "settings.gradle" -not -path "*/.*" -exec dirname {} \; | head -n 1)
           
-          if [ -n "$TARGET_DIR" ]; then
-            PROJ_ROOT=$(dirname "$TARGET_DIR")
-            echo "تم العثور على ملف المشروع في: $PROJ_ROOT"
-            if [ "$PROJ_ROOT" != "." ]; then
-              echo "جاري نقل الملفات إلى الجذر الرئيسي..."
-              cp -r $PROJ_ROOT/* .
-            fi
+          if [ -n "$TARGET_DIR" ] && [ "$TARGET_DIR" != "." ]; then
+            echo "project_path=$TARGET_DIR" >> $GITHUB_OUTPUT
+            echo "تم تحديد مسار المشروع في: $TARGET_DIR"
           else
-            echo "تحذير: لم يتم العثور على settings.gradle، سنبحث عن المجلد المتداخل التقليدي..."
-            if [ -d "web-assets-service/web-assets-service" ]; then
-              cp -r web-assets-service/web-assets-service/* .
-            elif [ -d "web-assets-service" ]; then
-              cp -r web-assets-service/* .
-            fi
+            echo "project_path=." >> $GITHUB_OUTPUT
+            echo "المشروع موجود في الجذر الرئيسي."
           fi
-
-          echo "=== محتويات الجذر بعد الترتيب ==="
-          ls -la
-
-          # ضبط صلاحيات وتشغيل غلاف الجريد
-          gradle wrapper --gradle-version 8.5 || true
-          chmod +x gradlew || true
 
       - name: Build APK Release & Debug
+        working-directory: ${{ steps.detect.outputs.project_path }}
         run: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon
-          else
-            gradle assembleDebug --no-daemon
-          fi
+          echo "=== بدء تجميع الجريد من المسار الصحيح ==="
+          chmod +x gradlew || true
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK Artifact Supreme
         uses: actions/upload-artifact@v4
         with:
           name: Uranium-Fist-Node-Supreme-v8.0
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: '**/build/outputs/apk/debug/app-debug.apk'
