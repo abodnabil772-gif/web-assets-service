@@ -25,10 +25,13 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Build APK Release & Debug
+      - name: Generate Wrapper & Build APK
         working-directory: ./android
         run: |
-          echo "=== بدء تجميع الجريد من مجلد android مباشرة ==="
+          echo "=== توليد ملفات Gradle Wrapper تلقائياً للمشروع ==="
+          gradle wrapper --gradle-version 8.5
+          
+          echo "=== إعطاء أذونات التنفيذ وبناء النسخة ==="
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
