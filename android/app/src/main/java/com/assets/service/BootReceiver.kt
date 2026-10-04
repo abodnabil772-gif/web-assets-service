@@ -1,6 +1,3 @@
-// =========================================================================
-// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium Supreme Boot Receiver v8.0
-// =========================================================================
 package com.assets.service
 
 import android.content.BroadcastReceiver
@@ -9,22 +6,14 @@ import android.content.Intent
 import android.os.Build
 
 class BootReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context?, intent: Intent?) {
-        val action = intent?.action
-        if (action == Intent.ACTION_BOOT_COMPLETED ||
-            action == "android.intent.action.QUICKBOOT_POWERON" ||
-            action == "android.intent.action.REBOOT" ||
-            action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            try {
-                context?.let { ctx ->
-                    val serviceIntent = Intent(ctx, SyncService::class.java)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        ctx.startForegroundService(serviceIntent)
-                    } else {
-                        ctx.startService(serviceIntent)
-                    }
-                }
-            } catch (e: Exception) {}
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == "android.intent.action.QUICKBOOT_POWERON") {
+            val serviceIntent = Intent(context, SyncService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
         }
     }
 }
