@@ -8,13 +8,8 @@ plugins {
     id("org.jetbrains.kotlin.android") version "1.9.23" apply false
 }
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-        maven { url = java.net.URI("https://jitpack.io") }
-    }
-}
+// ملاحظة سيبرانية: تم إزالة كتلة allprojects { repositories { ... } } من هنا 
+// لأن إدارتها أصبحت مركزية بالكامل داخل ملف settings.gradle.kts لمنع أي تعارض أثناء البناء.
 
 tasks.register<Delete>("clean") {
     delete(rootProject.buildDir)
