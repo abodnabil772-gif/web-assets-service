@@ -1,4 +1,4 @@
-name: Uranium Sovereign Node Builder v7.8
+name: Uranium Sovereign Node Builder v7.8 Ultimate
 
 on:
   workflow_dispatch:
@@ -27,10 +27,14 @@ jobs:
           gradle-version: '8.5'
 
       - name: Build APK Debug
-        run: cd android && chmod +x gradlew && ./gradlew app:assembleDebug
+        run: |
+          cd android
+          gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
+          ./gradlew app:assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Uranium-Sovereign-Node-v7.8
+          name: Uranium-Sovereign-Node-v7.8-Ultimate
           path: android/app/build/outputs/apk/debug/app-debug.apk
