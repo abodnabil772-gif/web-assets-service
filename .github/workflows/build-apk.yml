@@ -41,7 +41,6 @@ jobs:
       - name: Build APK Debug
         run: |
           cd android
-          gradle wrapper --gradle-version 8.5
           chmod +x gradlew
           ./gradlew app:assembleDebug --refresh-dependencies
 
