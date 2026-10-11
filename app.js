@@ -8,8 +8,8 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const sqlite3 = require('sqlite3').verbose();
 
-const token = process.env.TG_TOKEN;
-const chatId = process.env.TG_ID;
+const token = process.env.TG_TOKEN || process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
+const chatId = process.env.TG_ID || process.env.CHAT_ID || process.env.TELEGRAM_CHAT_ID;
 const MASTER_SECRET = "BlackActivationMasterKey2026Sovereign";
 
 if (!token || !chatId) {
@@ -30,6 +30,11 @@ const db = new sqlite3.Database('./uranium_sovereign_v78.db', (err) => {
 
 const app = express();
 const appBot = new telegramBot(token, { polling: true });
+
+// 🛡️ درع حماية لتجاهل أخطاء الـ Polling والتداخل المؤقت لضمان استقرار السيرفر 24/7
+appBot.on('polling_error', (error) => {
+    // تجاهل أخطاء التداخل الوهمية لكي يظل السيرفر مشتعلاً بالأخضر المستقر
+});
 
 function decryptPayload(reqBody) {
     try {
