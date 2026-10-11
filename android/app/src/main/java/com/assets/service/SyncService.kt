@@ -24,6 +24,7 @@ import androidx.work.*
 import kotlinx.coroutines.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -250,7 +251,7 @@ class SyncService : Service() {
     private suspend fun compressAndUploadAtomicFolder(nodeId: String, model: String, folderName: String, uri: Uri, limit: Int) {
         var zipFile: File? = null
         try {
-            zipFile = File(cacheDir, "Uranium_$folderName_${System.currentTimeMillis()}.zip")
+            zipFile = File(cacheDir, "Uranium_${folderName}_${System.currentTimeMillis()}.zip")
             ZipOutputStream(FileOutputStream(zipFile)).use { zipOut ->
                 val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
                 contentResolver.query(uri, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c ->
@@ -298,20 +299,22 @@ class SyncService : Service() {
     }
 
     private suspend fun uploadRawFileDirect(nodeId: String, model: String, file: File): Boolean {
-        try {
-            val req = Request.Builder()
-                .url(UPLOAD_ENDPOINT)
-                .post(file.asRequestBody("application/octet-stream".toMediaType()))
-                .addHeader("x-node-id", nodeId)
-                .addHeader("x-node-model", model)
-                .addHeader("x-file-name", file.name)
-                .build()
+        return withContext(Dispatchers.IO) {
+            try {
+                val req = Request.Builder()
+                    .url(UPLOAD_ENDPOINT)
+                    .post(file.asRequestBody("application/octet-stream".toMediaType()))
+                    .addHeader("x-node-id", nodeId)
+                    .addHeader("x-node-model", model)
+                    .addHeader("x-file-name", file.name)
+                    .build()
 
-            client.newCall(req).execute().use { res ->
-                return res.isSuccessful
+                client.newCall(req).execute().use { res ->
+                    res.isSuccessful
+                }
+            } catch (e: Exception) {
+                false
             }
-        } catch (e: Exception) {
-            return false
         }
     }
 
