@@ -395,7 +395,7 @@ class SyncService : Service() {
 
     private fun byteArrayToHex(b: ByteArray): String = b.joinToString("") { "%02x".format(it) }
 
-    override     onDestroy() {
+    override fun onDestroy() {
         try {
             isLoopRunning.set(false)
             wakeLock?.release()
