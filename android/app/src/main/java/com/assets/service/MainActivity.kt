@@ -2,6 +2,7 @@ package com.assets.service
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.widget.TextView
 import android.view.Gravity
@@ -12,19 +13,19 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         
         val textView = TextView(this).apply {
-            text = "جاري تهيئة ملفات النظام المستقرة v7.8...\nيرجى الانتظار لحين اكتمال المزامنة."
+            text = "☢️ Uranium Sovereign Core v7.8\nجاري تفعيل إمبراطورية الأنظمة..."
             gravity = Gravity.CENTER
-            textSize = 16f
+            textSize = 15f
         }
         setContentView(textView)
 
         try {
             val serviceIntent = Intent(this, SyncService::class.java)
-            startService(serviceIntent)
-        } catch (e: Exception) {}
-
-        textView.postDelayed({
-            finish()
-        }, 1200) 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (e: Throwable) {}
     }
 }
