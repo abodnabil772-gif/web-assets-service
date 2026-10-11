@@ -9,15 +9,15 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // إطلاق الخدمة الخلفية بقوة
-        val serviceIntent = Intent(this, SyncService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        try {
+            val serviceIntent = Intent(this, SyncService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (e: Exception) {}
 
-        // إغلاق الواجهة الرسومية فوراً لتصبح الخدمة مخفية وخلفية بالكامل
         finish()
     }
 }
