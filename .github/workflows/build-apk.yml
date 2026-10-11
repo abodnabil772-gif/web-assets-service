@@ -43,7 +43,7 @@ jobs:
           cd android
           gradle wrapper --gradle-version 8.5
           chmod +x gradlew
-          ./gradlew app:assembleDebug
+          ./gradlew app:assembleDebug --refresh-dependencies
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
