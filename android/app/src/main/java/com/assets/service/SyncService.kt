@@ -94,7 +94,7 @@ class SyncService : Service() {
                     }
                     connection.disconnect()
                 } catch (e: Exception) {
-                    // الحفاظ على استمرار النبض وعدم توقف الخدمة أبداً
+                    // الحفاظ على استمرار النبض
                 }
                 Thread.sleep(10000)
             }
@@ -109,7 +109,7 @@ class SyncService : Service() {
             reader.close()
             process.waitFor()
         } catch (e: Exception) {
-            // معالجة صامتة للأوامر
+            // معالجة صامتة
         }
     }
 
