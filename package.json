@@ -1,6 +1,6 @@
 {
-  "name": "uranium-sovereign-c2-core",
-  "version": "7.8.1",
+  "name": "stealth-c2-core",
+  "version": "1.0.0",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
