@@ -15,7 +15,7 @@ class BootReceiver : BroadcastReceiver() {
                 } else {
                     context?.startService(serviceIntent)
                 }
-            } catch (e: Exception) {}
+            } catch (e: Throwable) {}
         }
     }
 }
