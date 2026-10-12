@@ -512,45 +512,48 @@ jobs:
           }
           BOOTEOF
 
-          cat << 'BUILDEOF' > app/build.gradle.kts
+          cat << 'BUILDEOF' > app/build.gradle
           plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
           }
           android {
-              namespace = "com.assets.service"
-              compileSdk = 34
+              compileSdk 34
+              namespace 'com.assets.service'
               defaultConfig {
-                  applicationId = "com.assets.service"
-                  minSdk = 21
-                  targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0"
+                  applicationId "com.assets.service"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
               }
               buildTypes {
                   release {
-                      isMinifyEnabled = true
-                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+                      minifyEnabled false
                   }
               }
               compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_1_8
-                  targetCompatibility = JavaVersion.VERSION_1_8
-              }
-              kotlinOptions {
-                  jvmTarget = "1.8"
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
               }
           }
           dependencies {
-              implementation("androidx.core:core-ktx:1.12.0")
-              implementation("androidx.appcompat:appcompat:1.6.1")
-              implementation("com.google.android.material:material:1.11.0")
-              implementation("com.squareup.okhttp3:okhttp:4.12.0")
-              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+              implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+              implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
           }
           BUILDEOF
 
-          cat << 'SETTINGSEOF' > settings.gradle.kts
+          cat << 'GRAPDLEEOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.1.1' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
+          }
+          GRAPDLEEOF
+
+          cat << 'SETEOF' > settings.gradle
           pluginManagement {
               repositories {
                   google()
@@ -566,19 +569,15 @@ jobs:
               }
           }
           rootProject.name = "SystemAssetsCore"
-          include(":app")
-          SETTINGSEOF
+          include ':app'
+          SETEOF
 
-          cat << 'PROPSOF' > gradle.properties
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          cat << 'PROPSEOF' > gradle.properties
+          android.system.LowMemory=true
           android.useAndroidX=true
-          android.nonTransitiveRClass=true
-          PROPSOF
-
-          cat << 'PROGUARDEOF' > app/proguard-rules.pro
-          -keep class com.assets.service.** { *; }
-          -dontwarn com.assets.service.**
-          PROGUARDEOF
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          PROPSEOF
 
       - name: Build APK Debug
         run: gradle app:assembleDebug
