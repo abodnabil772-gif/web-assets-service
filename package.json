@@ -1,6 +1,6 @@
 {
   "name": "uranium-sovereign-c2-core",
-  "version": "7.8.0",
+  "version": "7.8.1",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
