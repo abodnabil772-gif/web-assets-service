@@ -1,43 +1,34 @@
-// =========================================================================
-// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium Supreme App Build Configuration
-// =========================================================================
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
 android {
-    namespace = "com.uranium.supreme"
+    namespace = "com.assets.service"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.uranium.supreme"
-        minSdk = 24
+        applicationId = "com.assets.service"
+        minSdk = 21
         targetSdk = 34
-        versionCode = 8
-        versionName = "8.0"
-
+        versionCode = 1
+        versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            isMinifyEnabled = true
+            isShrinkResources = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
-    
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
-    
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "1.8"
     }
 }
 
@@ -45,14 +36,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     
-    // ⚡ المكتبات الإمبراطورية المضافة لجسر فجوة Unresolved reference وتفعيل الخدمة الخلفية
+    // المكتبات المضافة لحل مشكلة Unresolved reference: okhttp3
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
