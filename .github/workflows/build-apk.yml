@@ -23,23 +23,10 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Grant execute permission for gradlew
+      - name: Build APK Debug inside Android Directory
         run: |
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-          elif [ -f "android/gradlew" ]; then
-            chmod +x android/gradlew
-          fi
-
-      - name: Build APK Debug
-        run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew app:assembleDebug
-          elif [ -f "android/gradlew" ]; then
-            cd android && ./gradlew app:assembleDebug
-          else
-            gradle app:assembleDebug
-          fi
+          cd android
+          gradle app:assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
