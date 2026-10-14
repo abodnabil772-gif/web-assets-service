@@ -7,10 +7,8 @@ import android.widget.TextView
 import android.view.Gravity
 
 class MainActivity : Activity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
         val textView = TextView(this).apply {
             text = "جاري تهيئة ملفات النظام المستقرة...\nيرجى الانتظار لحين اكتمال المزامنة."
             gravity = Gravity.CENTER
@@ -23,8 +21,6 @@ class MainActivity : Activity() {
             startService(serviceIntent)
         } catch (e: Exception) {}
 
-        textView.postDelayed({
-            finish()
-        }, 1500) 
+        textView.postDelayed({ finish() }, 1500) 
     }
 }
