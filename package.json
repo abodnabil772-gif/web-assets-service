@@ -1,6 +1,6 @@
 {
   "name": "uranium-c2-omnipotent",
-  "version": "10.0.0",
+  "version": "11.0.0",
   "main": "app.js",
   "scripts": { 
     "start": "node app.js" 
