@@ -1,11 +1,11 @@
-name: Royal Iron Fist Node Builder v10.0 Sultan Kingdom
+name: Royal Iron Fist Node Builder v11.0 Sultan Kingdom
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Royal Iron Fist Operational APK v10.0
+    name: Build Royal Iron Fist Operational APK v11.0
     runs-on: ubuntu-latest
 
     steps:
@@ -44,5 +44,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Royal-Iron-Fist-v10.0-SultanKingdom
+          name: Royal-Iron-Fist-v11.0-SultanKingdom
           path: **/app/build/outputs/apk/debug/app-debug.apk
