@@ -24,6 +24,8 @@ jobs:
           gradle-version: '8.5'
 
       - name: Build APK Debug inside Android Directory
+        env:
+          NODE_HMAC_KEY: ${{ secrets.NODE_HMAC_KEY }}
         run: |
           cd android
           gradle app:assembleDebug
