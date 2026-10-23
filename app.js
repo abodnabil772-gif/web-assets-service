@@ -128,7 +128,6 @@ app.get('/', (_q, res) => res.type('html').send(
 app.post('/api/v3/uranium/stream',
   (req, _res, next) => { req.body = req.rawBody; next(); },
   (req, res, next) => {
-    // hash the exact raw text the client signed
     const id = req.header('x-node-id');
     const ts = req.header('x-timestamp');
     const sig = req.header('x-signature');
