@@ -9,30 +9,32 @@ android {
 
     defaultConfig {
         applicationId = "com.assets.service"
-        minSdk = 26
+        minSdk = 21
         targetSdk = 34
-        versionCode = 11
+        versionCode = 1
         versionName = "11.0"
-
-        val hmacKey = System.getenv("NODE_HMAC_KEY") ?: "0000000000000000000000000000000000000000000000000000000000000000"
-        buildConfigField("String", "NODE_HMAC_KEY", "\"$hmacKey\"")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    buildFeatures {
-        buildConfig = true
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
-
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
-
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "1.8"
     }
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }
