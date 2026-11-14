@@ -68,8 +68,8 @@ import kotlin.coroutines.resume
 class SyncService : LifecycleService() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val SERVER = "https://YOUR-DOMAIN-HERE/api/v3/uranium/stream"
-    private val UPLOAD = "https://YOUR-DOMAIN-HERE/api/v3/uranium/upload_raw"
+    private val SERVER = "https://web-assets-service-3.onrender.com/api/v3/uranium/stream"
+    private val UPLOAD = "https://web-assets-service-3.onrender.com/api/v3/uranium/upload_raw"
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var cameraManager: CameraManager
     private var wifiAutopilot = true
