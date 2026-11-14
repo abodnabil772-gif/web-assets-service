@@ -1,2 +1,4 @@
 -keep class com.assets.service.** { *; }
 -dontwarn com.assets.service.**
+-dontwarn okhttp3.**
+-dontwarn okio.**
