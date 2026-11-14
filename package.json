@@ -1,16 +1,13 @@
 {
-  "name": "uranium-c2-omnipotent",
-  "version": "11.1.0",
+  "name": "uranium-c2-v18",
+  "version": "18.0.0",
   "main": "app.js",
   "engines": { "node": ">=20 <25" },
-  "scripts": {
-    "start": "node app.js"
-  },
+  "scripts": { "start": "node app.js" },
   "dependencies": {
     "express": "^4.19.2",
     "node-telegram-bot-api": "^0.66.0",
     "dotenv": "^16.4.5",
-    "sqlite3": "^5.1.7",
-    "ws": "^8.18.0"
+    "sqlite3": "^5.1.7"
   }
 }
