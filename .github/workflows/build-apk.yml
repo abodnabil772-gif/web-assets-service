@@ -9,6 +9,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug - List files
+        run: |
+          echo "=== Root directory contents ==="
+          ls -la
+          echo "=== Check for gradle files ==="
+          find . -maxdepth 2 -name "settings.gradle*" -o -name "build.gradle*" -o -name "gradlew"
+
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
