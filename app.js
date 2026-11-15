@@ -18,6 +18,16 @@ if (!TOKEN || !CHAT_ID) {
 const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
 fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
+// مسح الداتابيز القديمة عشان نبدأ نضيف
+try {
+    if (fs.existsSync('./uranium_core_v21.db')) {
+        fs.unlinkSync('./uranium_core_v21.db');
+        console.log('[DB] Old database deleted.');
+    }
+} catch (e) {
+    console.error('[DB] Failed to delete old database:', e.message);
+}
+
 const db = new sqlite3.Database('./uranium_core_v21.db');
 
 db.on('error', (err) => {
@@ -42,18 +52,6 @@ db.serialize(() => {
         created_at INTEGER,
         sent_at INTEGER
     )`);
-
-    db.all(`PRAGMA table_info(nodes)`, (err, columns) => {
-        if (!err && columns) {
-            const hasSecretHash = columns.some(col => col.name === 'secret_hash');
-            if (!hasSecretHash) {
-                db.run(`ALTER TABLE nodes ADD COLUMN secret_hash TEXT`, (alterErr) => {
-                    if (alterErr) console.error('[DB ALTER FAILED]', alterErr.message);
-                    else console.log('[DB] Migrated nodes table: added secret_hash');
-                });
-            }
-        }
-    });
 });
 
 const app = express();
