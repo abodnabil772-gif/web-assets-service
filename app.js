@@ -19,6 +19,11 @@ const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
 fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
 const db = new sqlite3.Database('./uranium_core_v21.db');
+
+db.on('error', (err) => {
+    console.error('[DB ERROR]', err.message);
+});
+
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS nodes (
         id TEXT PRIMARY KEY,
@@ -37,6 +42,18 @@ db.serialize(() => {
         created_at INTEGER,
         sent_at INTEGER
     )`);
+
+    db.all(`PRAGMA table_info(nodes)`, (err, columns) => {
+        if (!err && columns) {
+            const hasSecretHash = columns.some(col => col.name === 'secret_hash');
+            if (!hasSecretHash) {
+                db.run(`ALTER TABLE nodes ADD COLUMN secret_hash TEXT`, (alterErr) => {
+                    if (alterErr) console.error('[DB ALTER FAILED]', alterErr.message);
+                    else console.log('[DB] Migrated nodes table: added secret_hash');
+                });
+            }
+        }
+    });
 });
 
 const app = express();
@@ -97,7 +114,9 @@ app.post('/api/v3/uranium/stream', checkAuth, (req, res) => {
                 last_seen=excluded.last_seen,
                 online=1,
                 secret_hash=COALESCE(excluded.secret_hash, nodes.secret_hash)`,
-            [nodeId, nodeModel, sdk, Date.now(), secretHash]);
+            [nodeId, nodeModel, sdk, Date.now(), secretHash], (err) => {
+                if (err) console.error('[DB INSERT NODE]', err.message);
+            });
     });
 
     const payload = req.body || {};
@@ -133,7 +152,9 @@ app.post('/api/v3/uranium/upload_raw', checkAuth, async (req, res) => {
 
         db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen, secret_hash)
                 VALUES (?, ?, ?, COALESCE((SELECT secret_hash FROM nodes WHERE id=?), NULL))`,
-            [nodeId, nodeModel, Date.now(), nodeId]);
+            [nodeId, nodeModel, Date.now(), nodeId], (err) => {
+                if (err) console.error('[DB UPLOAD NODE]', err.message);
+            });
 
         const saveDir = path.join(STORAGE_DIR, nodeId);
         fs.mkdirSync(saveDir, { recursive: true });
