@@ -18,7 +18,6 @@ if (!TOKEN || !CHAT_ID) {
 const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
 fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
-// مسح الداتابيز القديمة عشان نبدأ نضيف
 try {
     if (fs.existsSync('./uranium_core_v21.db')) {
         fs.unlinkSync('./uranium_core_v21.db');
