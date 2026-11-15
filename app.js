@@ -77,7 +77,7 @@ const app = express();
 const appBot = new telegramBot(TOKEN, { polling: { interval: 1500, autoStart: true } });
 
 app.use(express.json({ limit: '100mb' }));
-// ---> أضفنا هذا السطر هنا لاستقبال البيانات النصية/المشفرة القادمة من الأندرويد بنجاح <---
+// ---> استقبال البيانات النصية المشفرة القادمة من الأندرويد بنجاح <---
 app.use(express.text({ type: '*/*', limit: '100mb' }));
 
 app.use('/api/v3/uranium/upload_raw', express.raw({ type: 'application/octet-stream', limit: '120mb' }));
