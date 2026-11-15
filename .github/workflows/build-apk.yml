@@ -9,13 +9,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug - List files
-        run: |
-          echo "=== Root directory contents ==="
-          ls -la
-          echo "=== Check for gradle files ==="
-          find . -maxdepth 2 -name "settings.gradle*" -o -name "build.gradle*" -o -name "gradlew"
-
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -26,7 +19,9 @@ jobs:
           gradle-version: '8.5'
 
       - name: Build
-        run: gradle app:assembleDebug
+        run: |
+          cd android
+          gradle app:assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
